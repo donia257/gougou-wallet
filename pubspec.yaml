@@ -20,6 +20,8 @@ flutter:
   uses-material-design: true
   assets:
     - assets/brand/wangwang-wallet-logo.png
+    - assets/fonts/OFL-Manrope.txt
+    - assets/fonts/OFL-NotoSansSC.txt
   fonts:
     - family: DailySans
       fonts:
