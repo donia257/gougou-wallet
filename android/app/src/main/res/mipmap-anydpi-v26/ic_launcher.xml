@@ -1,0 +1,4 @@
+<adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
+    <background android:drawable="@color/wangwang_icon_background" />
+    <foreground android:drawable="@drawable/wangwang_icon_foreground" />
+</adaptive-icon>

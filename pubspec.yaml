@@ -1,0 +1,29 @@
+name: daily_ledger
+description: A local-first daily bookkeeping app for Android.
+publish_to: none
+version: 0.1.0+1
+environment:
+  sdk: '>=3.8.0 <4.0.0'
+dependencies:
+  flutter:
+    sdk: flutter
+  flutter_localizations:
+    sdk: flutter
+  sqflite: ^2.4.2
+  path: ^1.9.1
+  file_picker: ^10.3.10
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+flutter:
+  uses-material-design: true
+  assets:
+    - assets/brand/wangwang-wallet-logo.png
+  fonts:
+    - family: DailySans
+      fonts:
+        - asset: assets/fonts/Manrope.ttf
+    - family: DailyChinese
+      fonts:
+        - asset: assets/fonts/NotoSansSC-bundled.ttf
