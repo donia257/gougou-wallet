@@ -13,10 +13,10 @@ LedgerEntry entry(
   cents: cents,
   date: DateTime(2026, 11, 6),
   category: type == EntryType.income
-      ? '工资'
+      ? 'income-0'
       : type == EntryType.transfer
-      ? '转账'
-      : '餐饮',
+      ? 'transfer'
+      : 'expense-0',
   accountId: 'cash',
   toAccountId: destination,
 );
@@ -101,7 +101,7 @@ void main() {
           throwsFormatException,
         );
       }
-      final json = Ledger.empty().toJson()..['version'] = 2;
+      final json = Ledger.empty().toJson()..['version'] = 99;
       expect(() => Ledger.decode(jsonEncode(json)), throwsFormatException);
     },
   );

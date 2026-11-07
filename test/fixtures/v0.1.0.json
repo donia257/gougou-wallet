@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "accounts": [
+    {"id": "cash", "name": "现金", "openingCents": 12345},
+    {"id": "wechat", "name": "微信", "openingCents": 6789}
+  ],
+  "entries": [
+    {"id": "legacy-income", "type": "income", "cents": 300000, "date": "2026-11-06T09:35:00.000", "category": "工资", "accountId": "cash", "toAccountId": null, "note": "测试工资"},
+    {"id": "legacy-food", "type": "expense", "cents": 2350, "date": "2026-11-06T12:28:00.000", "category": "餐饮", "accountId": "cash", "toAccountId": null, "note": "测试午餐"},
+    {"id": "legacy-transfer", "type": "transfer", "cents": 20000, "date": "2026-11-07T00:00:00.000", "category": "转账", "accountId": "cash", "toAccountId": "wechat", "note": ""},
+    {"id": "legacy-pet", "type": "expense", "cents": 9900, "date": "2026-11-07T23:59:59.999", "category": "狗粮", "accountId": "wechat", "toAccountId": null, "note": "测试自定义分类"}
+  ],
+  "expenseCategories": ["餐饮", "狗粮", "其他"],
+  "incomeCategories": ["工资", "其他收入"],
+  "budgets": {"2026-11": 120000}
+}
