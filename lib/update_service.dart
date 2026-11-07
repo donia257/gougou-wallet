@@ -27,6 +27,21 @@ class GithubRelease {
   Uri get url => Uri.parse(
     '$githubRepositoryUrl/releases/tag/${Uri.encodeComponent(tag)}',
   );
+  factory GithubRelease.fromRedirect(String? location) {
+    if (location == null) throw const FormatException('暂未找到正式版本');
+    final target = Uri.parse(githubRepositoryUrl).resolve(location);
+    final segments = target.pathSegments;
+    if (target.scheme != 'https' ||
+        target.host != 'github.com' ||
+        target.userInfo.isNotEmpty ||
+        target.port != 443 ||
+        segments.length != 5 ||
+        segments.take(4).join('/') != '$githubRepository/releases/tag') {
+      throw const FormatException('GitHub 更新地址有误');
+    }
+    versionParts(segments.last);
+    return GithubRelease(tag: segments.last, notes: '');
+  }
   factory GithubRelease.fromJson(Map<String, dynamic> data) {
     if (data['draft'] == true || data['prerelease'] == true) {
       throw const FormatException('暂未找到正式版本');
@@ -41,8 +56,13 @@ class GithubRelease {
 }
 
 class UpdateService {
+  UpdateService({HttpClient Function()? clientFactory})
+    : _clientFactory = clientFactory ?? _defaultClient;
+  final HttpClient Function() _clientFactory;
+  static HttpClient _defaultClient() =>
+      HttpClient()..connectionTimeout = const Duration(seconds: 8);
   Future<GithubRelease> latest() async {
-    final client = HttpClient()..connectionTimeout = const Duration(seconds: 8);
+    final client = _clientFactory();
     try {
       return await _fetch(client).timeout(const Duration(seconds: 15));
     } on TimeoutException {
@@ -64,9 +84,9 @@ class UpdateService {
     request.headers.set('Accept', 'application/vnd.github+json');
     request.headers.set('X-GitHub-Api-Version', '2022-11-28');
     final response = await request.close();
-    if (response.statusCode == 404) throw const HttpException('暂未找到正式版本');
-    if (response.statusCode == 403 || response.statusCode == 429) {
-      throw const HttpException('GitHub 查询较频繁，请稍后再试');
+    if ([403, 404, 429].contains(response.statusCode)) {
+      await response.drain<void>();
+      return _fromReleasePage(client);
     }
     if (response.statusCode != 200) {
       throw const HttpException('GitHub 暂时不可用，请稍后重试');
@@ -81,5 +101,21 @@ class UpdateService {
     return GithubRelease.fromJson(
       jsonDecode(utf8.decode(bytes)) as Map<String, dynamic>,
     );
+  }
+
+  Future<GithubRelease> _fromReleasePage(HttpClient client) async {
+    final request = await client.getUrl(
+      Uri.parse('$githubRepositoryUrl/releases/latest'),
+    );
+    request.followRedirects = false;
+    request.headers.set('User-Agent', 'gougou-wallet');
+    final response = await request.close();
+    final location = response.headers.value(HttpHeaders.locationHeader);
+    await response.drain<void>();
+    if (response.statusCode == 404) throw const HttpException('暂未找到正式版本');
+    if (![301, 302, 303, 307, 308].contains(response.statusCode)) {
+      throw const HttpException('GitHub 暂时不可用，请稍后重试');
+    }
+    return GithubRelease.fromRedirect(location);
   }
 }

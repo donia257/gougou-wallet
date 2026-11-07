@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 
-const appVersion = '0.2.0';
-const appBuild = 3;
+const appVersion = '0.2.1';
+const appBuild = 4;
 const forest = Color(0xFF245748);
 const paper = Color(0xFFF6F5EF);
 const ink = Color(0xFF263C34);
