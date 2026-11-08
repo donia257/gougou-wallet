@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'backup_page.dart';
 import 'category_page.dart';
@@ -10,6 +11,7 @@ import 'update_page.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
+  SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
   runApp(const DailyApp());
 }
 
@@ -32,6 +34,11 @@ class DailyApp extends StatelessWidget {
       appBarTheme: const AppBarTheme(
         backgroundColor: paper,
         foregroundColor: ink,
+        surfaceTintColor: Colors.transparent,
+        elevation: 0,
+        scrolledUnderElevation: 0,
+        centerTitle: true,
+        systemOverlayStyle: walletOverlay,
       ),
       filledButtonTheme: FilledButtonThemeData(
         style: FilledButton.styleFrom(
@@ -40,6 +47,26 @@ class DailyApp extends StatelessWidget {
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(18),
           ),
+        ),
+      ),
+      chipTheme: ChipThemeData(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        side: BorderSide.none,
+        backgroundColor: Colors.white,
+        selectedColor: const Color(0xFFDDE7D7),
+        labelStyle: const TextStyle(
+          color: ink,
+          fontFamily: 'DailySans',
+          fontFamilyFallback: ['DailyChinese'],
+        ),
+      ),
+      floatingActionButtonTheme: FloatingActionButtonThemeData(
+        backgroundColor: forest,
+        foregroundColor: Colors.white,
+        elevation: 0,
+        highlightElevation: 0,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(cardRadius),
         ),
       ),
       inputDecorationTheme: InputDecorationTheme(
@@ -276,20 +303,22 @@ class _LedgerHomeState extends State<LedgerHome> {
     }
     final monthly = monthlyEntries;
     final bills = page == 1 ? filteredEntries : <LedgerEntry>[];
-    final rows = groupedRows(page == 0 ? monthly : bills);
+    final rows = groupedRows(bills);
     return Scaffold(
-      body: SafeArea(
+      extendBody: true,
+      body: AnnotatedRegion<SystemUiOverlayStyle>(
+        value: walletOverlay,
         child: Column(
           children: [
-            if (busy) const LinearProgressIndicator(minHeight: 2),
             Expanded(
               child: CustomScrollView(
                 key: ValueKey(page),
                 slivers: [
-                  SliverPadding(
-                    padding: const EdgeInsets.fromLTRB(22, 22, 22, 0),
-                    sliver: SliverToBoxAdapter(child: header()),
-                  ),
+                  WalletSliverHeader(expanded: header()),
+                  if (busy)
+                    const SliverToBoxAdapter(
+                      child: LinearProgressIndicator(minHeight: 2),
+                    ),
                   SliverPadding(
                     padding: const EdgeInsets.fromLTRB(22, 24, 22, 0),
                     sliver: SliverList.list(
@@ -301,27 +330,40 @@ class _LedgerHomeState extends State<LedgerHome> {
                       },
                     ),
                   ),
-                  if (page == 0 || page == 1)
+                  if (page == 1)
                     SliverPadding(
                       padding: const EdgeInsets.symmetric(horizontal: 22),
                       sliver: rows.isEmpty
                           ? SliverToBoxAdapter(
-                              child: emptyState(
-                                page == 0 ? '从今天的第一笔开始' : '这里还没有账单',
-                                page == 0
-                                    ? '一顿早餐，一次出行，都值得被认真记录。'
-                                    : '试试调整日期或筛选条件。',
-                              ),
+                              child: emptyState('这里还没有账单', '试试调整日期或筛选条件。'),
                             )
                           : SliverList.builder(
                               itemCount: rows.length,
                               itemBuilder: (context, index) =>
                                   rows[index] is DaySummary
                                   ? dayHeader(rows[index] as DaySummary)
-                                  : entryTile(rows[index] as LedgerEntry),
+                                  : entryTile(
+                                      rows[index] as LedgerEntry,
+                                      last:
+                                          index == rows.length - 1 ||
+                                          rows[index + 1] is DaySummary,
+                                    ),
                             ),
                     ),
-                  const SliverToBoxAdapter(child: SizedBox(height: 110)),
+                  SliverLayoutBuilder(
+                    builder: (context, constraints) {
+                      final remaining =
+                          constraints.viewportMainAxisExtent -
+                          constraints.precedingScrollExtent +
+                          WalletSliverHeader.expandedExtent(context) -
+                          kToolbarHeight;
+                      return SliverToBoxAdapter(
+                        child: SizedBox(
+                          height: remaining > 110 ? remaining : 110,
+                        ),
+                      );
+                    },
+                  ),
                 ],
               ),
             ),
@@ -337,29 +379,34 @@ class _LedgerHomeState extends State<LedgerHome> {
               icon: const Icon(Icons.add),
               label: const Text('记一笔'),
             ),
-      bottomNavigationBar: NavigationBar(
-        selectedIndex: page,
-        onDestinationSelected: (value) => setState(() => page = value),
-        backgroundColor: paper,
-        indicatorColor: const Color(0xFFDDE7D7),
-        destinations: const [
-          NavigationDestination(
-            icon: Icon(Icons.cottage_outlined),
-            label: '日常',
-          ),
-          NavigationDestination(
-            icon: Icon(Icons.receipt_long_outlined),
-            label: '账单',
-          ),
-          NavigationDestination(
-            icon: Icon(Icons.donut_small_outlined),
-            label: '统计',
-          ),
-          NavigationDestination(
-            icon: Icon(Icons.settings_outlined),
-            label: '设置',
-          ),
-        ],
+      bottomNavigationBar: WalletGlassSurface(
+        bottom: true,
+        child: NavigationBar(
+          selectedIndex: page,
+          onDestinationSelected: (value) => setState(() => page = value),
+          backgroundColor: Colors.transparent,
+          surfaceTintColor: Colors.transparent,
+          elevation: 0,
+          indicatorColor: const Color(0xFFDDE7D7),
+          destinations: const [
+            NavigationDestination(
+              icon: Icon(Icons.cottage_outlined),
+              label: '日常',
+            ),
+            NavigationDestination(
+              icon: Icon(Icons.receipt_long_outlined),
+              label: '账单',
+            ),
+            NavigationDestination(
+              icon: Icon(Icons.donut_small_outlined),
+              label: '统计',
+            ),
+            NavigationDestination(
+              icon: Icon(Icons.settings_outlined),
+              label: '设置',
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -481,13 +528,84 @@ class _LedgerHomeState extends State<LedgerHome> {
       const SizedBox(height: 16),
       budgetCard(),
       const SizedBox(height: 20),
-      sectionTitle(
-        '最近的生活',
-        action: '查看全部',
-        onTap: () => setState(() => page = 1),
-      ),
+      sectionTitle('本月足迹', action: '查看账单', onTap: () => openBills()),
       const SizedBox(height: 8),
+      dailyOverview(),
     ];
+  }
+
+  void openBills({DateTime? day}) => setState(() {
+    range = null;
+    filter = null;
+    filterAccount = null;
+    filterCategory = null;
+    search.clear();
+    if (day != null) range = DateTimeRange(start: day, end: day);
+    page = 1;
+  });
+
+  Widget dailyOverview() {
+    final entries = monthlyEntries;
+    final days = entries.map((e) => dayKey(e.date)).toSet().length;
+    final now = DateTime.now();
+    final currentMonth = monthKey(month) == monthKey(now);
+    final today = entries.where((e) => dayKey(e.date) == dayKey(now)).toList();
+    final todayExpense = today
+        .where((e) => e.type == EntryType.expense)
+        .fold(0, (sum, e) => sum + e.cents);
+    return panel(
+      Padding(
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Icon(Icons.spa_outlined, color: forest, size: 28),
+            const SizedBox(height: 14),
+            Text(
+              entries.isEmpty ? '从今天的第一笔开始' : '已记下 $days 天的生活',
+              style: const TextStyle(
+                color: ink,
+                fontSize: 18,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              entries.isEmpty
+                  ? '一顿早餐，一次出行，都值得被认真记录。'
+                  : '这个月共记录 ${entries.length} 笔，慢慢积累自己的生活足迹。',
+              style: const TextStyle(color: muted, fontSize: 12, height: 1.7),
+            ),
+            if (currentMonth) ...[
+              const Padding(
+                padding: EdgeInsets.symmetric(vertical: 16),
+                child: Divider(height: 1, color: paper),
+              ),
+              Text(
+                '今日支出  ¥ ${money(todayExpense)}',
+                style: const TextStyle(
+                  color: forest,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              const SizedBox(height: 6),
+              Text(
+                today.isEmpty
+                    ? '今天还没有记录，随时记下一笔。'
+                    : '今天记录了 ${today.length} 笔收支与转账。',
+                style: const TextStyle(color: muted, fontSize: 12),
+              ),
+              const SizedBox(height: 8),
+              TextButton.icon(
+                onPressed: () => openBills(day: dayStart(now)),
+                icon: const Icon(Icons.arrow_forward_rounded, size: 18),
+                label: const Text('查看今日账单'),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
   }
 
   Widget summary(String label, int value) => Column(
@@ -585,6 +703,7 @@ class _LedgerHomeState extends State<LedgerHome> {
       const SizedBox(height: 12),
       Wrap(
         spacing: 8,
+        runSpacing: 8,
         children: [
           for (final pair in <(String, EntryType?)>[
             ('全部', null),
@@ -608,6 +727,7 @@ class _LedgerHomeState extends State<LedgerHome> {
       ),
       Wrap(
         spacing: 8,
+        runSpacing: 8,
         crossAxisAlignment: WrapCrossAlignment.center,
         children: [
           ActionChip(
@@ -631,10 +751,11 @@ class _LedgerHomeState extends State<LedgerHome> {
             onSelected: (value) =>
                 setState(() => filterAccount = value.isEmpty ? null : value),
             child: Chip(
+              avatar: const Icon(Icons.expand_more_rounded, size: 18),
               label: Text(
                 filterAccount == null
-                    ? '全部账户 ▾'
-                    : '${ledger!.accountName(filterAccount!)} ▾',
+                    ? '全部账户'
+                    : ledger!.accountName(filterAccount!),
               ),
             ),
           ),
@@ -658,10 +779,11 @@ class _LedgerHomeState extends State<LedgerHome> {
               onSelected: (value) =>
                   setState(() => filterCategory = value.isEmpty ? null : value),
               child: Chip(
+                avatar: const Icon(Icons.expand_more_rounded, size: 18),
                 label: Text(
                   filterCategory == null
-                      ? '全部分类 ▾'
-                      : '${ledger!.categoryById(filterCategory!).name} ▾',
+                      ? '全部分类'
+                      : ledger!.categoryById(filterCategory!).name,
                 ),
               ),
             ),
@@ -954,30 +1076,41 @@ class _LedgerHomeState extends State<LedgerHome> {
         : '${date.year == now.year ? '' : '${date.year} 年 '}${dayLabel(date)}';
     return Padding(
       key: ValueKey('day-${dayKey(date)}'),
-      padding: const EdgeInsets.fromLTRB(2, 16, 2, 10),
-      child: Wrap(
-        alignment: WrapAlignment.spaceBetween,
-        spacing: 12,
-        runSpacing: 4,
-        children: [
-          Text(
-            title,
-            style: const TextStyle(
-              color: ink,
-              fontWeight: FontWeight.w700,
-              fontSize: 13,
-            ),
+      padding: const EdgeInsets.only(top: 14),
+      child: Material(
+        color: Colors.white,
+        borderRadius: const BorderRadius.vertical(
+          top: Radius.circular(cardRadius),
+        ),
+        clipBehavior: Clip.antiAlias,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 16, 16, 10),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                title,
+                style: const TextStyle(
+                  color: ink,
+                  fontWeight: FontWeight.w700,
+                  fontSize: 13,
+                ),
+              ),
+              const SizedBox(height: 5),
+              Text(
+                '支出 ${money(summary.expense)} · 收入 ${money(summary.income)}',
+                style: const TextStyle(color: muted, fontSize: 11),
+              ),
+              const SizedBox(height: 10),
+              const Divider(height: 1, color: paper),
+            ],
           ),
-          Text(
-            '支出 ${money(summary.expense)} · 收入 ${money(summary.income)}',
-            style: const TextStyle(color: muted, fontSize: 11),
-          ),
-        ],
+        ),
       ),
     );
   }
 
-  Widget entryTile(LedgerEntry entry) {
+  Widget entryTile(LedgerEntry entry, {bool last = false}) {
     final label = ledger!.categoryName(entry);
     final icon = entry.type == EntryType.transfer
         ? '转账'
@@ -987,6 +1120,10 @@ class _LedgerHomeState extends State<LedgerHome> {
     return Material(
       key: ValueKey('entry-${entry.id}'),
       color: Colors.white,
+      borderRadius: BorderRadius.vertical(
+        bottom: Radius.circular(last ? cardRadius : 0),
+      ),
+      clipBehavior: Clip.antiAlias,
       child: ListTile(
         contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
         leading: Container(

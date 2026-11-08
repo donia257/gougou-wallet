@@ -1,7 +1,19 @@
+import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
-const appVersion = '0.2.1';
-const appBuild = 4;
+const appVersion = '0.2.2';
+const appBuild = 5;
+const cardRadius = 22.0;
+const walletOverlay = SystemUiOverlayStyle(
+  statusBarColor: Colors.transparent,
+  statusBarIconBrightness: Brightness.dark,
+  statusBarBrightness: Brightness.light,
+  systemNavigationBarColor: Colors.transparent,
+  systemNavigationBarIconBrightness: Brightness.dark,
+  systemStatusBarContrastEnforced: false,
+  systemNavigationBarContrastEnforced: false,
+);
 const forest = Color(0xFF245748);
 const paper = Color(0xFFF6F5EF);
 const ink = Color(0xFF263C34);
@@ -31,7 +43,7 @@ IconData categoryIcon(String key) =>
 
 Widget panel(Widget child) => Material(
   color: Colors.white,
-  borderRadius: BorderRadius.circular(22),
+  borderRadius: BorderRadius.circular(cardRadius),
   clipBehavior: Clip.antiAlias,
   child: child,
 );
@@ -101,3 +113,178 @@ Future<bool> confirmAction(
 void showMessage(BuildContext context, String message) => ScaffoldMessenger.of(
   context,
 ).showSnackBar(SnackBar(content: Text(message)));
+
+/// Blurs the content behind the chrome and keeps its edge visually light.
+class WalletGlassSurface extends StatelessWidget {
+  const WalletGlassSurface({
+    super.key,
+    required this.child,
+    this.strength = 1,
+    this.bottom = false,
+  });
+  final Widget child;
+  final double strength;
+  final bool bottom;
+
+  @override
+  Widget build(BuildContext context) {
+    final contrast = MediaQuery.highContrastOf(context);
+    final alpha = contrast ? 1.0 : strength;
+    final colors = bottom
+        ? [
+            paper.withValues(alpha: 0.45),
+            paper.withValues(alpha: 0.78),
+            paper.withValues(alpha: 0.92),
+          ]
+        : [
+            Color.lerp(paper, paper.withValues(alpha: 0.90), alpha)!,
+            Color.lerp(paper, paper.withValues(alpha: 0.62), alpha)!,
+            Color.lerp(paper, paper.withValues(alpha: 0.12), alpha)!,
+          ];
+    return ClipRRect(
+      borderRadius: bottom
+          ? const BorderRadius.vertical(top: Radius.circular(26))
+          : BorderRadius.zero,
+      child: BackdropFilter(
+        filter: ui.ImageFilter.blur(
+          sigmaX: contrast ? 0 : 18 * strength,
+          sigmaY: contrast ? 0 : 18 * strength,
+        ),
+        child: DecoratedBox(
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topCenter,
+              end: Alignment.bottomCenter,
+              colors: contrast ? [paper, paper, paper] : colors,
+              stops: const [0, 0.55, 1],
+            ),
+            border: bottom
+                ? Border(
+                    top: BorderSide(
+                      color: Colors.white.withValues(alpha: 0.65),
+                      width: 0.7,
+                    ),
+                  )
+                : null,
+          ),
+          child: child,
+        ),
+      ),
+    );
+  }
+}
+
+/// The expanded page introduction gives way to a centered, pinned brand header.
+class WalletSliverHeader extends StatelessWidget {
+  const WalletSliverHeader({super.key, required this.expanded});
+  final Widget expanded;
+
+  static double expandedExtent(BuildContext context) {
+    final painter = TextPainter(
+      text: const TextSpan(
+        text: '每一笔，都有迹可循。',
+        style: TextStyle(
+          fontFamily: 'DailySans',
+          fontFamilyFallback: ['DailyChinese'],
+          fontSize: 25,
+          height: 1.4,
+          fontWeight: FontWeight.w700,
+        ),
+      ),
+      textDirection: Directionality.of(context),
+      textScaler: MediaQuery.textScalerOf(context),
+    )..layout(maxWidth: MediaQuery.sizeOf(context).width - 44);
+    final height = painter.height;
+    painter.dispose();
+    final monthHeight = MediaQuery.textScalerOf(context).scale(11) * 2.9;
+    return 16 + (monthHeight > 48 ? monthHeight : 48) + 18 + height + 15;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final top = MediaQuery.paddingOf(context).top;
+    final height = expandedExtent(context);
+    return SliverAppBar(
+      pinned: true,
+      automaticallyImplyLeading: false,
+      expandedHeight: height,
+      backgroundColor: Colors.transparent,
+      forceMaterialTransparency: true,
+      systemOverlayStyle: walletOverlay,
+      flexibleSpace: LayoutBuilder(
+        builder: (context, constraints) {
+          final progress =
+              ((height + top - constraints.maxHeight) /
+                      (height - kToolbarHeight))
+                  .clamp(0.0, 1.0);
+          return ClipRect(
+            child: Stack(
+              children: [
+                Positioned.fill(
+                  child: WalletGlassSurface(
+                    strength: progress,
+                    child: const SizedBox.expand(),
+                  ),
+                ),
+                Positioned(
+                  top: top + 16 - progress * 24,
+                  left: 22,
+                  right: 22,
+                  child: IgnorePointer(
+                    ignoring: progress > 0.5,
+                    child: ExcludeSemantics(
+                      excluding: progress > 0.5,
+                      child: Opacity(
+                        opacity: (1 - progress * 2).clamp(0.0, 1.0),
+                        child: expanded,
+                      ),
+                    ),
+                  ),
+                ),
+                Positioned(
+                  top: top,
+                  left: 0,
+                  right: 0,
+                  height: kToolbarHeight,
+                  child: IgnorePointer(
+                    child: ExcludeSemantics(
+                      excluding: progress < 0.5,
+                      child: Opacity(
+                        opacity: ((progress - 0.5) * 2).clamp(0.0, 1.0),
+                        child: Center(
+                          child: Row(
+                            key: const ValueKey('collapsed-brand'),
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              ClipRRect(
+                                borderRadius: BorderRadius.circular(9),
+                                child: Image.asset(
+                                  'assets/brand/wangwang-wallet-logo.png',
+                                  width: 30,
+                                  height: 30,
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              const Text(
+                                '汪汪钱包',
+                                style: TextStyle(
+                                  color: forest,
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          );
+        },
+      ),
+    );
+  }
+}
