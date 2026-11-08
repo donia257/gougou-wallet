@@ -10,6 +10,10 @@ import 'repository.dart';
 import 'ui.dart';
 import 'selection_ui.dart';
 import 'update_page.dart';
+import 'image_share_service.dart';
+import 'ocr_service.dart';
+
+final walletRouteObserver = RouteObserver<ModalRoute<dynamic>>();
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
@@ -24,6 +28,7 @@ class DailyApp extends StatelessWidget {
   Widget build(BuildContext context) => MaterialApp(
     title: '汪汪钱包',
     debugShowCheckedModeBanner: false,
+    navigatorObservers: [walletRouteObserver],
     scrollBehavior: const MaterialScrollBehavior().copyWith(
       overscroll: false,
       physics: const ClampingScrollPhysics(),
@@ -89,14 +94,25 @@ class DailyApp extends StatelessWidget {
 }
 
 class LedgerHome extends StatefulWidget {
-  const LedgerHome({super.key, this.repository});
+  const LedgerHome({
+    super.key,
+    this.repository,
+    this.imageShares,
+    this.ocrService,
+  });
   final LedgerRepository? repository;
+  final ImageShareService? imageShares;
+  final OcrService? ocrService;
   @override
   State<LedgerHome> createState() => _LedgerHomeState();
 }
 
-class _LedgerHomeState extends State<LedgerHome> {
+class _LedgerHomeState extends State<LedgerHome> with RouteAware {
   late final repository = widget.repository ?? LedgerRepository();
+  late final imageShares = widget.imageShares ?? ImageShareService();
+  ModalRoute<dynamic>? homeRoute;
+  bool openingSharedReceipt = false;
+  int scansInProgress = 0;
   Ledger? ledger;
   bool loading = true;
   bool busy = false;
@@ -114,11 +130,74 @@ class _LedgerHomeState extends State<LedgerHome> {
   @override
   void initState() {
     super.initState();
+    imageShares.start(checkSharedImage);
     load();
   }
 
   @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final route = ModalRoute.of(context);
+    if (route != homeRoute) {
+      walletRouteObserver.unsubscribe(this);
+      homeRoute = route;
+      if (route != null) walletRouteObserver.subscribe(this, route);
+    }
+  }
+
+  @override
+  void didPopNext() => checkSharedImage();
+
+  void checkSharedImage() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) openSharedImage();
+    });
+    WidgetsBinding.instance.ensureVisualUpdate();
+  }
+
+  Future<void> openSharedImage() async {
+    if (openingSharedReceipt ||
+        scansInProgress > 0 ||
+        loading ||
+        busy ||
+        ledger == null ||
+        loadFailed ||
+        homeRoute?.isCurrent != true) {
+      return;
+    }
+    openingSharedReceipt = true;
+    SharedReceiptImage? image;
+    var returned = false;
+    try {
+      image = await imageShares.takeNext();
+      if (image == null) return;
+      if (!mounted || homeRoute?.isCurrent != true || busy) {
+        await imageShares.putBack(image);
+        returned = true;
+        return;
+      }
+      if (image.error != null || image.path == null) {
+        showMessage(context, image.error ?? '分享图片无法读取，请重新分享');
+      } else {
+        await editEntry(null, false, image.path);
+      }
+    } on PlatformException catch (error) {
+      if (mounted) showMessage(context, error.message ?? '读取分享图片失败，请重新分享');
+    } finally {
+      try {
+        if (image != null && !returned) await imageShares.release(image);
+      } on PlatformException {
+        /* Private cache expires if the engine is gone. */
+      }
+      openingSharedReceipt = false;
+      if (mounted && image != null && !returned) checkSharedImage();
+    }
+  }
+
+  @override
   void dispose() {
+    walletRouteObserver.unsubscribe(this);
+    imageShares.dispose();
     entryDockTimer?.cancel();
     search.dispose();
     super.dispose();
@@ -151,6 +230,7 @@ class _LedgerHomeState extends State<LedgerHome> {
           ledger = result;
           loading = false;
         });
+        checkSharedImage();
       }
     } catch (_) {
       if (mounted) {
@@ -184,11 +264,18 @@ class _LedgerHomeState extends State<LedgerHome> {
       if (mounted) showMessage(context, '保存失败，请检查存储空间后重试');
       return false;
     } finally {
-      if (mounted) setState(() => busy = false);
+      if (mounted) {
+        setState(() => busy = false);
+        checkSharedImage();
+      }
     }
   }
 
-  Future<void> editEntry([LedgerEntry? entry, bool copy = false]) async {
+  Future<void> editEntry([
+    LedgerEntry? entry,
+    bool copy = false,
+    String? sharedImagePath,
+  ]) async {
     if (busy) return;
     setState(restoreEntryButton);
     await Navigator.of(context).push(
@@ -197,6 +284,12 @@ class _LedgerHomeState extends State<LedgerHome> {
           ledger: ledger!,
           entry: entry,
           copy: copy,
+          initialImagePath: sharedImagePath,
+          ocrService: widget.ocrService,
+          onScanningChanged: (scanning) {
+            scansInProgress += scanning ? 1 : -1;
+            if (!scanning && mounted) checkSharedImage();
+          },
           onSave: (value) => commit(
             ledger!.copyWith(
               lastAccountId: value.accountId,

@@ -17,6 +17,8 @@ class EntryEditor extends StatefulWidget {
     this.onDelete,
     this.onCopy,
     this.ocrService,
+    this.initialImagePath,
+    this.onScanningChanged,
   });
   final Ledger ledger;
   final LedgerEntry? entry;
@@ -25,6 +27,8 @@ class EntryEditor extends StatefulWidget {
   final Future<bool> Function()? onDelete;
   final VoidCallback? onCopy;
   final OcrService? ocrService;
+  final String? initialImagePath;
+  final ValueChanged<bool>? onScanningChanged;
   @override
   State<EntryEditor> createState() => _EntryEditorState();
 }
@@ -63,7 +67,11 @@ class _EntryEditorState extends State<EntryEditor> {
     super.initState();
     // Request the initial keyboard once, rather than autofocus when a lazily
     // built input is recreated after a selector scrolls it out of view.
-    if (widget.entry == null) {
+    if (widget.initialImagePath != null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) scanReceipt(imagePath: widget.initialImagePath);
+      });
+    } else if (widget.entry == null) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) amountFocus.requestFocus();
       });
@@ -138,16 +146,24 @@ class _EntryEditorState extends State<EntryEditor> {
     }
   }
 
-  Future<void> scanReceipt() async {
+  Future<void> scanReceipt({String? imagePath}) async {
     if (locked) return;
     FocusManager.instance.primaryFocus?.unfocus(
       disposition: UnfocusDisposition.scope,
     );
     setState(() => scanning = true);
+    final onScanningChanged = widget.onScanningChanged;
+    onScanningChanged?.call(true);
     try {
-      final document = await (widget.ocrService ?? OcrService())
-          .pickAndRecognize();
-      if (!mounted || document == null) return;
+      final service = widget.ocrService ?? OcrService();
+      final document = imagePath == null
+          ? await service.pickAndRecognize()
+          : await service.recognizeImage(imagePath);
+      if (!mounted ||
+          ModalRoute.of(context)?.isCurrent != true ||
+          document == null) {
+        return;
+      }
       final suggestion = parseReceipt(document, widget.ledger);
       final draft = await Navigator.of(context).push<ReceiptDraft>(
         MaterialPageRoute(
@@ -160,7 +176,11 @@ class _EntryEditorState extends State<EntryEditor> {
           ),
         ),
       );
-      if (draft == null || !mounted) return;
+      if (draft == null ||
+          !mounted ||
+          ModalRoute.of(context)?.isCurrent != true) {
+        return;
+      }
       setState(() {
         amount.text = money(draft.cents);
         type = draft.type;
@@ -178,6 +198,7 @@ class _EntryEditorState extends State<EntryEditor> {
       if (mounted) showMessage(context, '无法识别这张图片，请选择清晰的支付截图或小票');
     } finally {
       if (mounted) setState(() => scanning = false);
+      onScanningChanged?.call(false);
     }
   }
 
