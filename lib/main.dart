@@ -22,6 +22,10 @@ class DailyApp extends StatelessWidget {
   Widget build(BuildContext context) => MaterialApp(
     title: '汪汪钱包',
     debugShowCheckedModeBanner: false,
+    scrollBehavior: const MaterialScrollBehavior().copyWith(
+      overscroll: false,
+      physics: const ClampingScrollPhysics(),
+    ),
     locale: const Locale('zh', 'CN'),
     supportedLocales: const [Locale('zh', 'CN')],
     localizationsDelegates: GlobalMaterialLocalizations.delegates,

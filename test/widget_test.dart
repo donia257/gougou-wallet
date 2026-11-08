@@ -525,6 +525,47 @@ void main() {
     });
   }
 
+  testWidgets('pages stay clamped while dragging past either scroll boundary', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(390, 844);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    await tester.pumpWidget(
+      DailyApp(home: LedgerHome(repository: MemoryRepository())),
+    );
+    await tester.pumpAndSettle();
+    for (final tab in ['日常', '账单', '统计', '设置']) {
+      await tester.tap(find.text(tab));
+      await tester.pumpAndSettle();
+      final viewport = find.byType(CustomScrollView);
+      final scrollable = tester.state<ScrollableState>(
+        find.descendant(of: viewport, matching: find.byType(Scrollable)).first,
+      );
+      final position = scrollable.position;
+      for (final bottom in [false, true]) {
+        position.jumpTo(
+          bottom ? position.maxScrollExtent : position.minScrollExtent,
+        );
+        await tester.pumpAndSettle();
+        final gesture = await tester.startGesture(tester.getCenter(viewport));
+        await gesture.moveBy(Offset(0, bottom ? -240 : 240));
+        await tester.pump();
+        expect(
+          position.pixels,
+          bottom ? position.maxScrollExtent : position.minScrollExtent,
+          reason: '$tab boundary',
+        );
+        expect(find.byType(StretchingOverscrollIndicator), findsNothing);
+        expect(find.byType(GlowingOverscrollIndicator), findsNothing);
+        await gesture.up();
+        await tester.pumpAndSettle();
+      }
+    }
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('home layout at narrow width and large text', (tester) async {
     tester.view.physicalSize = const Size(320, 720);
     tester.view.devicePixelRatio = 1;

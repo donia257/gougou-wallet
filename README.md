@@ -1,10 +1,10 @@
 # 汪汪钱包
 
-独立实现的 Flutter Android 日常记账应用，当前版本 0.2.2。
+独立实现的 Flutter Android 日常记账应用，当前版本 0.2.3。
 
 ![汪汪钱包 Logo](assets/brand/wangwang-wallet-logo.png)
 
-支持 Android 7.0 及以上设备。发布标签为 `v0.2.2`，Android 构建号为 `5`。
+支持 Android 7.0 及以上设备。发布标签为 `v0.2.3`，Android 构建号为 `6`。
 应用标识为 `io.github.donia257.gougouwallet`。
 版本记录见 [CHANGELOG.md](CHANGELOG.md)。
 
