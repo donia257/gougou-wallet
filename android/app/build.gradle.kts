@@ -17,6 +17,14 @@ android {
     compileSdk = flutter.compileSdkVersion
     ndkVersion = flutter.ndkVersion
 
+    // Flutter and ML Kit may add default ABI filters during configuration.
+    // Exclude foreign JNI payloads as a final packaging invariant as well.
+    packaging {
+        jniLibs {
+            excludes += setOf("lib/armeabi-v7a/**", "lib/x86/**", "lib/x86_64/**")
+        }
+    }
+
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
@@ -34,6 +42,9 @@ android {
         // flag during build.
         versionCode = flutter.versionCode
         versionName = flutter.versionName
+        ndk {
+            abiFilters.add("arm64-v8a")
+        }
     }
 
     signingConfigs {
@@ -50,6 +61,9 @@ android {
     buildTypes {
         release {
             signingConfig = signingConfigs.getByName("release")
+            isMinifyEnabled = true
+            isShrinkResources = true
+            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
         }
     }
 }
@@ -62,4 +76,9 @@ kotlin {
 
 flutter {
     source = "../.."
+}
+
+dependencies {
+    // Bundled Chinese model: usable offline immediately, no Play Services download.
+    implementation("com.google.mlkit:text-recognition-chinese:16.0.1")
 }

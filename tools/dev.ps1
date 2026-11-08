@@ -40,13 +40,30 @@ if (-not $env:PUB_HOSTED_URL) {
 Push-Location -LiteralPath $buildRoot
 try {
     if ($Command -eq 'apk') {
-        & $flutter build apk --debug
+        & $flutter build apk --debug --target-platform android-arm64
     } elseif ($Command -eq 'release') {
-        & $flutter build apk --release
+        & $flutter build apk --release --target-platform android-arm64
     } else {
         & $flutter $Command
     }
     if ($LASTEXITCODE -ne 0) { throw "Flutter command failed with exit code $LASTEXITCODE" }
+    if ($Command -in @('apk', 'release')) {
+        Add-Type -AssemblyName System.IO.Compression.FileSystem
+        $apkMode = if ($Command -eq 'release') { 'release' } else { 'debug' }
+        $apkPath = Join-Path $buildRoot "build/app/outputs/flutter-apk/app-$apkMode.apk"
+        $archive = [System.IO.Compression.ZipFile]::OpenRead($apkPath)
+        try {
+            $abis = @($archive.Entries | ForEach-Object {
+                if ($_.FullName -match '^lib/([^/]+)/') { $Matches[1] }
+            } | Sort-Object -Unique)
+            if ($abis.Count -ne 1 -or $abis[0] -ne 'arm64-v8a') {
+                throw "APK architecture verification failed: $($abis -join ', ')"
+            }
+            Write-Host 'APK ABI verified: arm64-v8a'
+        } finally {
+            $archive.Dispose()
+        }
+    }
 } finally {
     Pop-Location
 }

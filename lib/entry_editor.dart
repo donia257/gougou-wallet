@@ -3,6 +3,9 @@ import 'package:flutter/services.dart';
 import 'ledger.dart';
 import 'ui.dart';
 import 'selection_ui.dart';
+import 'ocr_service.dart';
+import 'receipt_parser.dart';
+import 'receipt_review_page.dart';
 
 class EntryEditor extends StatefulWidget {
   const EntryEditor({
@@ -13,6 +16,7 @@ class EntryEditor extends StatefulWidget {
     this.copy = false,
     this.onDelete,
     this.onCopy,
+    this.ocrService,
   });
   final Ledger ledger;
   final LedgerEntry? entry;
@@ -20,6 +24,7 @@ class EntryEditor extends StatefulWidget {
   final Future<bool> Function(LedgerEntry) onSave;
   final Future<bool> Function()? onDelete;
   final VoidCallback? onCopy;
+  final OcrService? ocrService;
   @override
   State<EntryEditor> createState() => _EntryEditorState();
 }
@@ -48,6 +53,9 @@ class _EntryEditorState extends State<EntryEditor> {
       : widget.entry?.date ?? DateTime.now();
   bool saving = false;
   bool saved = false;
+  bool scanning = false;
+  bool recognized = false;
+  bool get locked => saving || scanning;
   bool get editing => widget.entry != null && !widget.copy;
 
   @override
@@ -71,7 +79,7 @@ class _EntryEditorState extends State<EntryEditor> {
   }
 
   Future<void> save({bool continueAdding = false}) async {
-    if (saving || !form.currentState!.validate()) return;
+    if (locked || !form.currentState!.validate()) return;
     setState(() => saving = true);
     final entry = LedgerEntry(
       id: editing
@@ -103,6 +111,7 @@ class _EntryEditorState extends State<EntryEditor> {
       setState(() {
         date = DateTime.now();
         saved = true;
+        recognized = false;
       });
     } else {
       Navigator.pop(context);
@@ -126,6 +135,49 @@ class _EntryEditorState extends State<EntryEditor> {
           date.minute,
         ),
       );
+    }
+  }
+
+  Future<void> scanReceipt() async {
+    if (locked) return;
+    FocusManager.instance.primaryFocus?.unfocus(
+      disposition: UnfocusDisposition.scope,
+    );
+    setState(() => scanning = true);
+    try {
+      final document = await (widget.ocrService ?? OcrService())
+          .pickAndRecognize();
+      if (!mounted || document == null) return;
+      final suggestion = parseReceipt(document, widget.ledger);
+      final draft = await Navigator.of(context).push<ReceiptDraft>(
+        MaterialPageRoute(
+          builder: (_) => ReceiptReviewPage(
+            document: document,
+            ledger: widget.ledger,
+            suggestion: suggestion,
+            currentDate: date,
+            currentNote: note.text,
+          ),
+        ),
+      );
+      if (draft == null || !mounted) return;
+      setState(() {
+        amount.text = money(draft.cents);
+        type = draft.type;
+        category = draft.categoryId;
+        note.text = draft.note;
+        date = draft.date ?? date;
+        saved = false;
+        recognized = true;
+      });
+    } on FormatException catch (error) {
+      if (mounted) showMessage(context, error.message.toString());
+    } on PlatformException catch (error) {
+      if (mounted) showMessage(context, error.message ?? '图片识别失败，请重试');
+    } catch (_) {
+      if (mounted) showMessage(context, '无法识别这张图片，请选择清晰的支付截图或小票');
+    } finally {
+      if (mounted) setState(() => scanning = false);
     }
   }
 
@@ -165,15 +217,20 @@ class _EntryEditorState extends State<EntryEditor> {
           onPressed: saving ? null : () => Navigator.pop(context),
         ),
         actions: [
+          IconButton(
+            tooltip: '图片识别',
+            onPressed: locked ? null : scanReceipt,
+            icon: const Icon(Icons.image_search_rounded),
+          ),
           if (editing) ...[
             TextButton(
-              onPressed: saving ? null : widget.onCopy,
+              onPressed: locked ? null : widget.onCopy,
               child: const Text('复制'),
             ),
             IconButton(
               tooltip: '删除账单',
               icon: const Icon(Icons.delete_outline),
-              onPressed: saving
+              onPressed: locked
                   ? null
                   : () async {
                       setState(() => saving = true);
@@ -191,6 +248,16 @@ class _EntryEditorState extends State<EntryEditor> {
           key: form,
           child: Column(
             children: [
+              if (scanning)
+                const LinearProgressIndicator(semanticsLabel: '正在本机识别图片'),
+              if (recognized)
+                const Padding(
+                  padding: EdgeInsets.fromLTRB(22, 8, 22, 0),
+                  child: Text(
+                    '识别结果已填入，请核对后保存',
+                    style: TextStyle(color: forest),
+                  ),
+                ),
               Expanded(
                 child: ListView(
                   keyboardDismissBehavior:
@@ -208,7 +275,7 @@ class _EntryEditorState extends State<EntryEditor> {
                         ),
                       ],
                       selected: type,
-                      onChanged: saving
+                      onChanged: locked
                           ? null
                           : (value) => setState(() {
                               type = value;
@@ -229,7 +296,7 @@ class _EntryEditorState extends State<EntryEditor> {
                       onChanged: (_) {
                         if (saved) setState(() => saved = false);
                       },
-                      enabled: !saving,
+                      enabled: !locked,
                       focusNode: amountFocus,
                       keyboardType: const TextInputType.numberWithOptions(
                         decimal: true,
@@ -273,7 +340,7 @@ class _EntryEditorState extends State<EntryEditor> {
                                 icon: categoryIcon(c.icon),
                                 label: c.name,
                                 selected: category == c.id,
-                                onTap: saving
+                                onTap: locked
                                     ? null
                                     : () => setState(() => category = c.id),
                               ),
@@ -286,7 +353,7 @@ class _EntryEditorState extends State<EntryEditor> {
                       label: type == EntryType.transfer ? '转出账户' : '记入账户',
                       value: widget.ledger.accountName(account),
                       icon: Icons.account_balance_wallet_outlined,
-                      onTap: saving
+                      onTap: locked
                           ? null
                           : () async {
                               final value = await showWalletChoices<String>(
@@ -325,7 +392,7 @@ class _EntryEditorState extends State<EntryEditor> {
                         label: '转入账户',
                         value: widget.ledger.accountName(destination),
                         icon: Icons.south_west_rounded,
-                        onTap: saving
+                        onTap: locked
                             ? null
                             : () async {
                                 final value = await showWalletChoices<String>(
@@ -361,7 +428,7 @@ class _EntryEditorState extends State<EntryEditor> {
                             ),
                             title: const Text('日期'),
                             trailing: Text('${date.year} 年 ${dayLabel(date)}'),
-                            onTap: saving ? null : pickDate,
+                            onTap: locked ? null : pickDate,
                           ),
                           const Divider(height: 1, indent: 16, endIndent: 16),
                           ListTile(
@@ -371,7 +438,7 @@ class _EntryEditorState extends State<EntryEditor> {
                             ),
                             title: const Text('时间'),
                             trailing: Text(timeLabel(date)),
-                            onTap: saving ? null : pickTime,
+                            onTap: locked ? null : pickTime,
                           ),
                         ],
                       ),
@@ -381,7 +448,7 @@ class _EntryEditorState extends State<EntryEditor> {
                       key: const ValueKey('entry-note'),
                       controller: note,
                       onTapOutside: (_) => FocusScope.of(context).unfocus(),
-                      enabled: !saving,
+                      enabled: !locked,
                       maxLength: 120,
                       decoration: const InputDecoration(
                         labelText: '备注',
@@ -404,7 +471,7 @@ class _EntryEditorState extends State<EntryEditor> {
                     if (!editing) ...[
                       Expanded(
                         child: OutlinedButton(
-                          onPressed: saving
+                          onPressed: locked
                               ? null
                               : () => save(continueAdding: true),
                           child: const Padding(
@@ -417,7 +484,7 @@ class _EntryEditorState extends State<EntryEditor> {
                     ],
                     Expanded(
                       child: FilledButton(
-                        onPressed: saving ? null : save,
+                        onPressed: locked ? null : save,
                         child: Text(saving ? '正在保存…' : '保存这一笔'),
                       ),
                     ),

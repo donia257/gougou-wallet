@@ -106,33 +106,6 @@ String _clean(String value) => value.replaceAll('\uFEFF', '').trim();
 String _header(String value) =>
     _clean(value).replaceAll(RegExp(r'[\s（）()]'), '');
 
-DateTime _parseDate(String value) {
-  final match = RegExp(
-    r'^(\d{4})[-/](\d{1,2})[-/](\d{1,2})[ T](\d{1,2}):(\d{2})(?::(\d{2}))?(?:\.\d+)?$',
-  ).firstMatch(value);
-  if (match == null) throw const FormatException('交易时间无法识别');
-  final parts = [for (var i = 1; i <= 6; i++) int.parse(match.group(i) ?? '0')];
-  final date = DateTime(
-    parts[0],
-    parts[1],
-    parts[2],
-    parts[3],
-    parts[4],
-    parts[5],
-  );
-  if (date.year < 1900 ||
-      date.year > 2100 ||
-      date.year != parts[0] ||
-      date.month != parts[1] ||
-      date.day != parts[2] ||
-      parts[3] > 23 ||
-      parts[4] > 59 ||
-      parts[5] > 59) {
-    throw const FormatException('交易日期或时间无效');
-  }
-  return date;
-}
-
 String _cellText(Data? data) {
   final value = data?.value;
   if (value is DateTimeCellValue) {
@@ -347,7 +320,8 @@ ImportPreview _preview(
         rows.add(rejected(ImportDisposition.invalid, '无法确认交易状态：$status'));
         continue;
       }
-      final date = _parseDate(dateText);
+      final date = parseTransactionDate(dateText);
+      if (date == null) throw const FormatException('交易日期或时间无效');
       final cents = parseMoney(
         field(['金额元', '金额']).replaceAll(RegExp(r'[¥￥,\s]'), ''),
       );

@@ -2,8 +2,8 @@ import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
-const appVersion = '0.3.0';
-const appBuild = 9;
+const appVersion = '0.3.1';
+const appBuild = 10;
 const cardRadius = 22.0;
 const walletOverlay = SystemUiOverlayStyle(
   statusBarColor: Colors.transparent,

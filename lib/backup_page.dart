@@ -1,9 +1,9 @@
 import 'dart:convert';
-import 'dart:io';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'ledger.dart';
+import 'import_files.dart';
 import 'import_page.dart';
 import 'repository.dart';
 import 'ui.dart';
@@ -75,13 +75,7 @@ class _BackupPageState extends State<BackupPage> {
       final result = await FilePicker.platform.pickFiles(type: FileType.any);
       if (result == null) return;
       final file = result.files.single;
-      if (file.size > 20 * 1024 * 1024) {
-        throw const FormatException('文件超过 20 MB');
-      }
-      final bytes = file.bytes ?? await File(file.path!).readAsBytes();
-      if (bytes.length > 20 * 1024 * 1024) {
-        throw const FormatException('文件超过 20 MB');
-      }
+      final bytes = await readImportFile(file);
       imported = Ledger.decode(utf8.decode(bytes));
     } on FormatException catch (error) {
       failure = '备份无效，${error.message}';

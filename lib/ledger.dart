@@ -20,6 +20,35 @@ String timeLabel(DateTime date) =>
     '${twoDigits(date.hour)}:${twoDigits(date.minute)}';
 DateTime dayStart(DateTime date) => DateTime(date.year, date.month, date.day);
 
+DateTime? parseTransactionDate(String text, {bool dateOnly = false}) {
+  final match = RegExp(
+    r'^(\d{4})[-/年](\d{1,2})[-/月](\d{1,2})日?(?:[ T\s]+(\d{1,2}):(\d{2})(?::(\d{2}))?(?:\.\d+)?)?$',
+  ).firstMatch(text.trim());
+  if (match == null || (!dateOnly && match.group(4) == null)) return null;
+  final values = [
+    for (var i = 1; i <= 6; i++) int.parse(match.group(i) ?? '0'),
+  ];
+  final date = DateTime(
+    values[0],
+    values[1],
+    values[2],
+    values[3],
+    values[4],
+    values[5],
+  );
+  if (date.year < 1900 ||
+      date.year > 2100 ||
+      date.year != values[0] ||
+      date.month != values[1] ||
+      date.day != values[2] ||
+      date.hour != values[3] ||
+      date.minute != values[4] ||
+      date.second != values[5]) {
+    return null;
+  }
+  return date;
+}
+
 int budgetDaysRemaining(DateTime month, DateTime now) {
   final selected = DateTime(month.year, month.month);
   final current = DateTime(now.year, now.month);

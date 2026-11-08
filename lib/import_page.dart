@@ -1,8 +1,9 @@
-import 'dart:io';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'bill_import.dart';
+import 'import_files.dart';
+import 'category_rules.dart';
 import 'ledger.dart';
 import 'selection_ui.dart';
 import 'ui.dart';
@@ -33,10 +34,7 @@ class _BillImportPageState extends State<BillImportPage> {
       final result = await FilePicker.platform.pickFiles(type: FileType.any);
       if (result == null) return;
       final file = result.files.single;
-      if (file.size > 20 * 1024 * 1024) {
-        throw const FormatException('文件不能超过 20 MB');
-      }
-      final bytes = file.bytes ?? await File(file.path!).readAsBytes();
+      final bytes = await readImportFile(file);
       preview = await compute(_parseRequest, (
         bytes,
         file.name,
@@ -212,13 +210,7 @@ class _BillImportPreviewPageState extends State<BillImportPreviewPage> {
     for (final row in widget.preview.rows) {
       if (row.disposition == ImportDisposition.ready) selected.add(row.line);
       if (row.selectable) {
-        final choices = ledger.categoriesFor(row.type!);
-        categories[row.line] = choices
-            .firstWhere(
-              (c) => c.name == (row.type == EntryType.income ? '其他收入' : '其他'),
-              orElse: () => choices.first,
-            )
-            .id;
+        categories[row.line] = fallbackCategory(ledger, row.type!);
       }
     }
   }
