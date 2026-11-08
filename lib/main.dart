@@ -7,6 +7,7 @@ import 'entry_editor.dart';
 import 'ledger.dart';
 import 'repository.dart';
 import 'ui.dart';
+import 'selection_ui.dart';
 import 'update_page.dart';
 
 void main() {
@@ -240,8 +241,8 @@ class _LedgerHomeState extends State<LedgerHome> {
     end: DateTime(month.year, month.month + 1, 0),
   );
   List<LedgerEntry> get filteredEntries => ledger!.selectEntries(
-    start: range?.start ?? month,
-    end: range?.end ?? DateTime(month.year, month.month + 1, 0),
+    start: range?.start ?? DateTime(1900),
+    end: range?.end ?? DateTime(2100, 12, 31),
     type: filter,
     accountId: filterAccount,
     categoryId: filterCategory,
@@ -256,18 +257,13 @@ class _LedgerHomeState extends State<LedgerHome> {
   });
 
   Future<void> pickRange() async {
-    final selected = await showDateRangePicker(
-      context: context,
-      firstDate: DateTime(1900),
-      lastDate: DateTime(2100, 12, 31),
-      initialDateRange:
-          range ??
-          DateTimeRange(
-            start: month,
-            end: DateTime(month.year, month.month + 1, 0),
-          ),
+    final selected = await showWalletDateSheet(
+      context,
+      initial: range ?? walletAllDates(),
     );
-    if (selected != null && mounted) setState(() => range = selected);
+    if (selected != null && mounted) {
+      setState(() => range = isWalletAllDates(selected) ? null : selected);
+    }
   }
 
   @override
@@ -435,7 +431,7 @@ class _LedgerHomeState extends State<LedgerHome> {
               style: TextStyle(color: forest, fontWeight: FontWeight.w700),
             ),
           ),
-          if (page != 3)
+          if (page != 3 && page != 1)
             DecoratedBox(
               decoration: BoxDecoration(
                 color: Colors.white,
@@ -454,10 +450,38 @@ class _LedgerHomeState extends State<LedgerHome> {
                             range = null;
                           }),
                   ),
-                  Text(
-                    '${month.year}\n${month.month} 月',
-                    textAlign: TextAlign.center,
-                    style: const TextStyle(fontSize: 11, color: forest),
+                  InkWell(
+                    borderRadius: BorderRadius.circular(12),
+                    onTap: () async {
+                      final selected = await walletSheet<DateTime>(
+                        context,
+                        WalletMonthSheet(initial: month),
+                      );
+                      if (selected != null && mounted) {
+                        setState(() {
+                          month = selected;
+                          range = null;
+                        });
+                      }
+                    },
+                    child: Tooltip(
+                      message: '选择月份',
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(
+                          vertical: 8,
+                          horizontal: 2,
+                        ),
+                        child: Text(
+                          '${month.year}\n${month.month} 月',
+                          textAlign: TextAlign.center,
+                          style: const TextStyle(
+                            fontSize: 11,
+                            color: forest,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                    ),
                   ),
                   IconButton(
                     tooltip: '下个月',
@@ -539,7 +563,10 @@ class _LedgerHomeState extends State<LedgerHome> {
   }
 
   void openBills({DateTime? day}) => setState(() {
-    range = null;
+    range = DateTimeRange(
+      start: month,
+      end: DateTime(month.year, month.month + 1, 0),
+    );
     filter = null;
     filterAccount = null;
     filterCategory = null;
@@ -637,6 +664,10 @@ class _LedgerHomeState extends State<LedgerHome> {
   Widget budgetCard() {
     final budget = ledger!.budgets[monthKey(month)];
     final expense = ledger!.total(EntryType.expense, month);
+    final days = budgetDaysRemaining(month, DateTime.now());
+    final allowance = budget == null
+        ? 0
+        : dailyDisposableCents(budget, expense, days);
     return panel(
       InkWell(
         onTap: busy ? null : setBudget,
@@ -680,6 +711,39 @@ class _LedgerHomeState extends State<LedgerHome> {
                     fontSize: 12,
                   ),
                 ),
+                const SizedBox(height: 14),
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(14),
+                  decoration: BoxDecoration(
+                    color: paper,
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        days == 0 ? '这个月已结束' : '日均可支配  ¥ ${money(allowance)}',
+                        style: const TextStyle(
+                          color: forest,
+                          fontSize: 16,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                      const SizedBox(height: 5),
+                      Text(
+                        days == 0
+                            ? '历史月份保留收支与预算小结'
+                            : '${monthKey(month) == monthKey(DateTime.now()) ? '本月剩余 $days 天（含今天）' : '全月 $days 天'} · 按还可用金额计算${expense > budget ? '，当前已超支' : ''}',
+                        style: const TextStyle(
+                          color: muted,
+                          fontSize: 11,
+                          height: 1.6,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
               ],
             ],
           ),
@@ -695,6 +759,78 @@ class _LedgerHomeState extends State<LedgerHome> {
     final expense = bills
         .where((e) => e.type == EntryType.expense)
         .fold(0, (sum, e) => sum + e.cents);
+    Future<void> pickType() async {
+      final value = await showWalletChoices<String>(
+        context,
+        title: '收支类型',
+        selected: filter?.name ?? '',
+        options: const [
+          WalletOption('', '全部类型', icon: Icons.receipt_long_rounded),
+          WalletOption('expense', '支出', icon: Icons.north_east_rounded),
+          WalletOption('income', '收入', icon: Icons.south_west_rounded),
+          WalletOption('transfer', '转账', icon: Icons.swap_horiz_rounded),
+        ],
+      );
+      if (value == null || !mounted) return;
+      setState(() {
+        filter = value.isEmpty ? null : EntryType.values.byName(value);
+        if (filter == EntryType.transfer ||
+            (filterCategory != null &&
+                filter != null &&
+                ledger!.categoryById(filterCategory!).type != filter)) {
+          filterCategory = null;
+        }
+      });
+    }
+
+    Future<void> pickAccount() async {
+      final value = await showWalletChoices<String>(
+        context,
+        title: '筛选账户',
+        selected: filterAccount ?? '',
+        options: [
+          const WalletOption(
+            '',
+            '全部账户',
+            icon: Icons.account_balance_wallet_outlined,
+          ),
+          ...ledger!.accounts.map(
+            (a) => WalletOption(
+              a.id,
+              a.name,
+              icon: Icons.account_balance_wallet_outlined,
+            ),
+          ),
+        ],
+      );
+      if (value != null && mounted) {
+        setState(() => filterAccount = value.isEmpty ? null : value);
+      }
+    }
+
+    Future<void> pickCategory() async {
+      final value = await showWalletChoices<String>(
+        context,
+        title: '筛选分类',
+        selected: filterCategory ?? '',
+        options: [
+          const WalletOption('', '全部分类', icon: Icons.grid_view_rounded),
+          ...ledger!.categories
+              .where((c) => filter == null || c.type == filter)
+              .map(
+                (c) => WalletOption(
+                  c.id,
+                  '${c.type == EntryType.expense ? '支出' : '收入'} · ${c.name}',
+                  icon: categoryIcon(c.icon),
+                ),
+              ),
+        ],
+      );
+      if (value != null && mounted) {
+        setState(() => filterCategory = value.isEmpty ? null : value);
+      }
+    }
+
     return [
       TextField(
         controller: search,
@@ -705,94 +841,67 @@ class _LedgerHomeState extends State<LedgerHome> {
         onChanged: (_) => setState(() {}),
       ),
       const SizedBox(height: 12),
-      Wrap(
-        spacing: 8,
-        runSpacing: 8,
-        children: [
-          for (final pair in <(String, EntryType?)>[
-            ('全部', null),
-            ('支出', EntryType.expense),
-            ('收入', EntryType.income),
-            ('转账', EntryType.transfer),
-          ])
-            ChoiceChip(
-              label: Text(pair.$1),
-              selected: filter == pair.$2,
-              onSelected: (_) => setState(() {
-                filter = pair.$2;
-                if (filterCategory != null &&
-                    filter != null &&
-                    ledger!.categoryById(filterCategory!).type != filter) {
-                  filterCategory = null;
-                }
-              }),
-            ),
-        ],
-      ),
-      Wrap(
-        spacing: 8,
-        runSpacing: 8,
-        crossAxisAlignment: WrapCrossAlignment.center,
-        children: [
-          ActionChip(
-            avatar: const Icon(Icons.date_range, size: 18),
-            label: Text(
-              range == null
-                  ? '自定义日期'
-                  : '${dayKey(range!.start)} 至 ${dayKey(range!.end)}',
-            ),
-            onPressed: pickRange,
-          ),
-          PopupMenuButton<String>(
-            tooltip: '按账户筛选',
-            initialValue: filterAccount ?? '',
-            itemBuilder: (context) => [
-              const PopupMenuItem(value: '', child: Text('全部账户')),
-              ...ledger!.accounts.map(
-                (a) => PopupMenuItem(value: a.id, child: Text(a.name)),
+      panel(
+        Row(
+          key: const ValueKey('bill-filter-bar'),
+          children: [
+            Expanded(
+              child: WalletFilterCell(
+                label: '类型',
+                value: filter == null
+                    ? '全部类型'
+                    : {
+                        'expense': '支出',
+                        'income': '收入',
+                        'transfer': '转账',
+                      }[filter!.name]!,
+                active: filter != null,
+                onTap: pickType,
               ),
-            ],
-            onSelected: (value) =>
-                setState(() => filterAccount = value.isEmpty ? null : value),
-            child: Chip(
-              avatar: const Icon(Icons.expand_more_rounded, size: 18),
-              label: Text(
-                filterAccount == null
+            ),
+            Expanded(
+              child: WalletFilterCell(
+                label: '日期',
+                detail: range == null
+                    ? '全部日期'
+                    : '${dayKey(range!.start)} 至 ${dayKey(range!.end)}',
+                value: range == null
+                    ? '全部日期'
+                    : walletRangeLabel(range!, DateTime.now()),
+                active: range != null,
+                onTap: pickRange,
+              ),
+            ),
+            Expanded(
+              child: WalletFilterCell(
+                label: '账户',
+                value: filterAccount == null
                     ? '全部账户'
                     : ledger!.accountName(filterAccount!),
+                active: filterAccount != null,
+                onTap: pickAccount,
               ),
             ),
-          ),
-          if (filter != EntryType.transfer)
-            PopupMenuButton<String>(
-              tooltip: '按分类筛选',
-              initialValue: filterCategory ?? '',
-              itemBuilder: (context) => [
-                const PopupMenuItem(value: '', child: Text('全部分类')),
-                ...ledger!.categories
-                    .where((c) => filter == null || c.type == filter)
-                    .map(
-                      (c) => PopupMenuItem(
-                        value: c.id,
-                        child: Text(
-                          '${c.type == EntryType.expense ? '支出' : '收入'} · ${c.name}',
-                        ),
-                      ),
-                    ),
-              ],
-              onSelected: (value) =>
-                  setState(() => filterCategory = value.isEmpty ? null : value),
-              child: Chip(
-                avatar: const Icon(Icons.expand_more_rounded, size: 18),
-                label: Text(
-                  filterCategory == null
-                      ? '全部分类'
-                      : ledger!.categoryById(filterCategory!).name,
-                ),
+            Expanded(
+              child: WalletFilterCell(
+                label: '分类',
+                value: filterCategory == null
+                    ? '全部分类'
+                    : ledger!.categoryById(filterCategory!).name,
+                active: filterCategory != null,
+                onTap: filter == EntryType.transfer ? null : pickCategory,
               ),
             ),
-          TextButton(onPressed: clearFilters, child: const Text('清除筛选')),
-        ],
+          ],
+        ),
+      ),
+      Align(
+        alignment: Alignment.centerRight,
+        child: TextButton.icon(
+          onPressed: clearFilters,
+          icon: const Icon(Icons.restart_alt_rounded, size: 16),
+          label: const Text('清除筛选'),
+        ),
       ),
       const SizedBox(height: 8),
       Text(

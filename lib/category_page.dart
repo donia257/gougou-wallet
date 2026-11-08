@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'ledger.dart';
 import 'ui.dart';
+import 'selection_ui.dart';
 
 class CategoryPage extends StatefulWidget {
   const CategoryPage({super.key, required this.ledger, required this.onSave});
@@ -74,17 +75,31 @@ class _CategoryPageState extends State<CategoryPage> {
               ),
               if (count > 0) ...[
                 const SizedBox(height: 16),
-                DropdownButtonFormField<String>(
-                  initialValue: replacement,
-                  decoration: const InputDecoration(labelText: '账单迁入分类'),
-                  items: alternatives
-                      .map(
-                        (c) =>
-                            DropdownMenuItem(value: c.id, child: Text(c.name)),
-                      )
-                      .toList(),
-                  onChanged: (value) =>
-                      setDialogState(() => replacement = value!),
+                WalletSelectField(
+                  label: '账单迁入分类',
+                  value: alternatives
+                      .firstWhere((c) => c.id == replacement)
+                      .name,
+                  icon: Icons.drive_file_move_outlined,
+                  onTap: () async {
+                    final value = await showWalletChoices<String>(
+                      context,
+                      title: '选择迁入分类',
+                      selected: replacement,
+                      options: alternatives
+                          .map(
+                            (c) => WalletOption(
+                              c.id,
+                              c.name,
+                              icon: categoryIcon(c.icon),
+                            ),
+                          )
+                          .toList(),
+                    );
+                    if (value != null && context.mounted) {
+                      setDialogState(() => replacement = value);
+                    }
+                  },
                 ),
               ],
             ],
@@ -147,15 +162,15 @@ class _CategoryPageState extends State<CategoryPage> {
           children: [
             Padding(
               padding: const EdgeInsets.fromLTRB(22, 12, 22, 8),
-              child: SegmentedButton<EntryType>(
-                segments: const [
-                  ButtonSegment(value: EntryType.expense, label: Text('支出分类')),
-                  ButtonSegment(value: EntryType.income, label: Text('收入分类')),
+              child: WalletSegments<EntryType>(
+                options: const [
+                  WalletOption(EntryType.expense, '支出分类'),
+                  WalletOption(EntryType.income, '收入分类'),
                 ],
-                selected: {type},
-                onSelectionChanged: saving
+                selected: type,
+                onChanged: saving
                     ? null
-                    : (selection) => setState(() => type = selection.single),
+                    : (value) => setState(() => type = value),
               ),
             ),
             const Padding(
@@ -191,41 +206,57 @@ class _CategoryPageState extends State<CategoryPage> {
                         trailing: Row(
                           mainAxisSize: MainAxisSize.min,
                           children: [
-                            PopupMenuButton<String>(
+                            IconButton(
                               tooltip: '分类操作',
-                              enabled: !saving,
-                              itemBuilder: (context) => [
-                                const PopupMenuItem(
-                                  value: 'edit',
-                                  child: Text('编辑'),
-                                ),
-                                if (index > 0)
-                                  const PopupMenuItem(
-                                    value: 'up',
-                                    child: Text('上移'),
-                                  ),
-                                if (index < categories.length - 1)
-                                  const PopupMenuItem(
-                                    value: 'down',
-                                    child: Text('下移'),
-                                  ),
-                                const PopupMenuItem(
-                                  value: 'delete',
-                                  child: Text('删除'),
-                                ),
-                              ],
-                              onSelected: (action) {
-                                switch (action) {
-                                  case 'edit':
-                                    edit(category);
-                                  case 'delete':
-                                    remove(category);
-                                  case 'up':
-                                    reorder(index, index - 1);
-                                  case 'down':
-                                    reorder(index, index + 1);
-                                }
-                              },
+                              icon: const Icon(Icons.more_horiz_rounded),
+                              onPressed: saving
+                                  ? null
+                                  : () async {
+                                      final action =
+                                          await showWalletChoices<String>(
+                                            context,
+                                            title: category.name,
+                                            selected: '',
+                                            options: [
+                                              const WalletOption(
+                                                'edit',
+                                                '编辑',
+                                                icon: Icons.edit_outlined,
+                                              ),
+                                              if (index > 0)
+                                                const WalletOption(
+                                                  'up',
+                                                  '上移',
+                                                  icon: Icons
+                                                      .arrow_upward_rounded,
+                                                ),
+                                              if (index < categories.length - 1)
+                                                const WalletOption(
+                                                  'down',
+                                                  '下移',
+                                                  icon: Icons
+                                                      .arrow_downward_rounded,
+                                                ),
+                                              const WalletOption(
+                                                'delete',
+                                                '删除',
+                                                icon: Icons
+                                                    .delete_outline_rounded,
+                                              ),
+                                            ],
+                                          );
+                                      if (!mounted) return;
+                                      switch (action) {
+                                        case 'edit':
+                                          edit(category);
+                                        case 'delete':
+                                          remove(category);
+                                        case 'up':
+                                          reorder(index, index - 1);
+                                        case 'down':
+                                          reorder(index, index + 1);
+                                      }
+                                    },
                             ),
                             ReorderableDragStartListener(
                               index: index,
@@ -315,11 +346,11 @@ class _CategoryDialogState extends State<CategoryDialog> {
               children: categoryIcons.entries
                   .where((e) => e.key != '转账')
                   .map(
-                    (entry) => IconButton.filledTonal(
-                      tooltip: entry.key,
-                      isSelected: icon == entry.key,
-                      onPressed: () => setState(() => icon = entry.key),
-                      icon: Icon(entry.value),
+                    (entry) => WalletPill(
+                      label: entry.key,
+                      icon: entry.value,
+                      selected: icon == entry.key,
+                      onTap: () => setState(() => icon = entry.key),
                     ),
                   )
                   .toList(),

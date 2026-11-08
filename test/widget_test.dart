@@ -3,6 +3,8 @@ import 'dart:ui' as ui;
 import 'package:daily_ledger/ledger.dart';
 import 'package:daily_ledger/main.dart';
 import 'package:daily_ledger/ui.dart';
+import 'package:daily_ledger/selection_ui.dart';
+import 'package:flutter/cupertino.dart';
 import 'package:daily_ledger/repository.dart';
 import 'package:daily_ledger/category_page.dart';
 import 'package:daily_ledger/update_page.dart';
@@ -113,13 +115,16 @@ void main() {
       await tester.ensureVisible(find.text('时间'));
       await tester.tap(find.text('时间'));
       await tester.pumpAndSettle();
-      final timeFields = find.descendant(
-        of: find.byType(TimePickerDialog),
-        matching: find.byType(TextField),
-      );
-      await tester.enterText(timeFields.first, '08');
-      await tester.enterText(timeFields.last, '45');
-      await tester.tap(find.text('确定'));
+      tester
+          .widget<CupertinoPicker>(find.byKey(const ValueKey('hour-wheel')))
+          .scrollController!
+          .jumpToItem(8);
+      tester
+          .widget<CupertinoPicker>(find.byKey(const ValueKey('minute-wheel')))
+          .scrollController!
+          .jumpToItem(45);
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('应用时间'));
       await tester.pumpAndSettle();
       expect(find.text('08:45'), findsOneWidget);
       await tester.ensureVisible(find.text('保存并继续'));
@@ -357,7 +362,7 @@ void main() {
         tester.widget<TextField>(find.byType(TextField)).controller!.text,
         isEmpty,
       );
-      expect(find.text('自定义日期'), findsOneWidget);
+      expect(find.text('本月'), findsOneWidget);
       expect(tester.takeException(), isNull);
     },
   );
@@ -565,6 +570,290 @@ void main() {
     }
     expect(tester.takeException(), isNull);
   });
+
+  test('date presets include today and use Monday-based calendar weeks', () {
+    final presets = walletDatePresets(DateTime(2026, 1, 1, 23, 59));
+    expect(
+      presets['今天'],
+      DateTimeRange(start: DateTime(2026), end: DateTime(2026)),
+    );
+    expect(
+      presets['近三天'],
+      DateTimeRange(start: DateTime(2025, 12, 30), end: DateTime(2026)),
+    );
+    expect(
+      presets['本周'],
+      DateTimeRange(start: DateTime(2025, 12, 29), end: DateTime(2026, 1, 4)),
+    );
+    expect(presets['本月']!.end, DateTime(2026, 1, 31));
+    expect(presets['本年']!.end, DateTime(2026, 12, 31));
+  });
+
+  testWidgets(
+    'single-row filters apply date presets, types and category compatibility',
+    (tester) async {
+      tester.view.physicalSize = const Size(390, 1000);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      final now = DateTime.now();
+      final repository = MemoryRepository(
+        Ledger.empty().copyWith(
+          entries: [
+            LedgerEntry(
+              id: 'today-expense',
+              type: EntryType.expense,
+              cents: 100,
+              date: now,
+              category: 'expense-0',
+              accountId: 'cash',
+            ),
+            LedgerEntry(
+              id: 'today-income',
+              type: EntryType.income,
+              cents: 200,
+              date: now,
+              category: 'income-0',
+              accountId: 'cash',
+            ),
+            LedgerEntry(
+              id: 'previous-month',
+              type: EntryType.expense,
+              cents: 400,
+              date: DateTime(now.year, now.month - 1, 15),
+              category: 'expense-0',
+              accountId: 'cash',
+            ),
+            LedgerEntry(
+              id: 'older',
+              type: EntryType.expense,
+              cents: 300,
+              date: DateTime(now.year, now.month, now.day - 4),
+              category: 'expense-0',
+              accountId: 'cash',
+            ),
+          ],
+        ),
+      );
+      await tester.pumpWidget(
+        DailyApp(home: LedgerHome(repository: repository)),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('账单'));
+      await tester.pumpAndSettle();
+      final cells = find.byType(WalletFilterCell);
+      expect(cells, findsNWidgets(4));
+      expect(find.text('全部类型'), findsOneWidget);
+      expect(find.text('全部日期'), findsOneWidget);
+      expect(find.text('类型'), findsNothing);
+      expect(find.text('日期'), findsNothing);
+      expect(find.text('共 4 笔'), findsOneWidget);
+      expect(
+        tester.getTopLeft(cells.first).dy,
+        tester.getTopLeft(cells.last).dy,
+      );
+      await tester.tap(cells.at(1));
+      await tester.pumpAndSettle();
+      for (final label in ['今天', '近三天', '本周', '本月', '本年']) {
+        expect(find.text(label), findsWidgets);
+      }
+      await tester.tap(find.text('今天').last);
+      await tester.tap(find.text('应用日期'));
+      await tester.pumpAndSettle();
+      expect(find.text('共 2 笔'), findsOneWidget);
+      await tester.tap(cells.first);
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('支出'));
+      await tester.pumpAndSettle();
+      expect(find.text('共 1 笔'), findsOneWidget);
+      await tester.tap(cells.at(3));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('支出 · 餐饮'));
+      await tester.pumpAndSettle();
+      expect(tester.widget<WalletFilterCell>(cells.at(3)).active, isTrue);
+      await tester.tap(cells.first);
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('转账'));
+      await tester.pumpAndSettle();
+      expect(tester.widget<WalletFilterCell>(cells.at(3)).onTap, isNull);
+      await tester.tap(find.text('清除筛选'));
+      await tester.pumpAndSettle();
+      expect(tester.widget<WalletFilterCell>(cells.at(3)).onTap, isNotNull);
+      expect(find.text('全部日期'), findsOneWidget);
+      expect(find.text('共 4 笔'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  for (final narrow in [false, true]) {
+    testWidgets(
+      'new selection sheets fit and preserve selections, narrow=$narrow',
+      (tester) async {
+        final size = narrow ? const Size(320, 720) : const Size(390, 844);
+        tester.view.physicalSize = size;
+        tester.view.devicePixelRatio = 1;
+        addTearDown(tester.view.resetPhysicalSize);
+        addTearDown(tester.view.resetDevicePixelRatio);
+        final key = GlobalKey();
+        DateTimeRange? result;
+        TimeOfDay? time;
+        tester.platformDispatcher.textScaleFactorTestValue = narrow ? 1.4 : 1;
+        addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
+        await tester.pumpWidget(
+          RepaintBoundary(
+            key: key,
+            child: DailyApp(
+              home: Builder(
+                builder: (context) => Scaffold(
+                  body: Center(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        FilledButton(
+                          onPressed: () async {
+                            result = await showWalletDateSheet(
+                              context,
+                              initial: DateTimeRange(
+                                start: DateTime(2026, 12, 28),
+                                end: DateTime(2026, 12, 30),
+                              ),
+                            );
+                          },
+                          child: const Text('open-date'),
+                        ),
+                        FilledButton(
+                          onPressed: () async {
+                            time = await showWalletTimeSheet(
+                              context,
+                              const TimeOfDay(hour: 23, minute: 59),
+                            );
+                          },
+                          child: const Text('open-time'),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+        Future<void> capture(String name) async {
+          // Capture the Navigator overlay as well as the underlying page.
+          final boundary =
+              key.currentContext!.findRenderObject()! as RenderRepaintBoundary;
+          await tester.runAsync(() async {
+            final image = await boundary.toImage(pixelRatio: 2);
+            final bytes = await image.toByteData(
+              format: ui.ImageByteFormat.png,
+            );
+            final file = File(
+              'build/ui-review/$name-${narrow ? 'narrow' : 'phone'}.png',
+            );
+            await file.parent.create(recursive: true);
+            await file.writeAsBytes(bytes!.buffer.asUint8List());
+            image.dispose();
+          });
+        }
+
+        await tester.tap(find.text('open-date'));
+        await tester.pumpAndSettle();
+        await capture('date-range');
+        expect(tester.takeException(), isNull);
+        final startCell = find.byKey(const ValueKey('calendar-2026-12-31'));
+        await Scrollable.ensureVisible(
+          tester.element(startCell),
+          alignment: .5,
+        );
+        await tester.tap(startCell);
+        await tester.pumpAndSettle();
+        expect(
+          tester
+              .widget<FilledButton>(find.widgetWithText(FilledButton, '应用日期'))
+              .onPressed,
+          isNull,
+        );
+        await tester.tap(find.byTooltip('日历下个月'));
+        await tester.pumpAndSettle();
+        final endCell = find.byKey(const ValueKey('calendar-2027-01-02'));
+        await Scrollable.ensureVisible(tester.element(endCell), alignment: .5);
+        await tester.tap(endCell);
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('应用日期'));
+        await tester.pumpAndSettle();
+        expect(
+          result,
+          DateTimeRange(
+            start: DateTime(2026, 12, 31),
+            end: DateTime(2027, 1, 2),
+          ),
+        );
+        await tester.tap(find.text('open-time'));
+        await tester.pumpAndSettle();
+        await capture('time-wheel');
+        final hour = tester.widget<CupertinoPicker>(
+          find.byKey(const ValueKey('hour-wheel')),
+        );
+        final minute = tester.widget<CupertinoPicker>(
+          find.byKey(const ValueKey('minute-wheel')),
+        );
+        expect(hour.childDelegate, isA<ListWheelChildLoopingListDelegate>());
+        hour.scrollController!.jumpToItem(24);
+        minute.scrollController!.jumpToItem(60);
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('应用时间'));
+        await tester.pumpAndSettle();
+        expect(time, const TimeOfDay(hour: 0, minute: 0));
+        await tester.tap(find.text('open-time'));
+        await tester.pumpAndSettle();
+        await tester.tap(find.byTooltip('关闭'));
+        await tester.pumpAndSettle();
+        expect(time, isNull);
+        expect(tester.takeException(), isNull);
+      },
+    );
+  }
+
+  testWidgets(
+    'account sheets keep transfer accounts distinct and save the destination',
+    (tester) async {
+      tester.view.physicalSize = const Size(390, 1000);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      final repository = MemoryRepository();
+      await tester.pumpWidget(
+        DailyApp(home: LedgerHome(repository: repository)),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('记一笔'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('转账'));
+      await tester.pumpAndSettle();
+      await tester.enterText(find.byKey(const ValueKey('entry-amount')), '20');
+      var accountField = find.byType(WalletSelectField).first;
+      await tester.ensureVisible(accountField);
+      await tester.tap(accountField);
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('银行卡').last);
+      await tester.pumpAndSettle();
+      accountField = find.byType(WalletSelectField).last;
+      await tester.ensureVisible(accountField);
+      await tester.tap(accountField);
+      await tester.pumpAndSettle();
+      expect(find.text('银行卡').hitTestable(), findsNothing);
+      await tester.tap(find.text('现金').last);
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('保存这一笔'));
+      await tester.pumpAndSettle();
+      expect(repository.data.entries.single.accountId, 'bank');
+      expect(repository.data.entries.single.toAccountId, 'cash');
+      expect(repository.data.balance('bank'), -2000);
+      expect(repository.data.balance('cash'), 2000);
+      expect(tester.takeException(), isNull);
+    },
+  );
 
   testWidgets('home layout at narrow width and large text', (tester) async {
     tester.view.physicalSize = const Size(320, 720);

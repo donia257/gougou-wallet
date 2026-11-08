@@ -23,6 +23,26 @@ LedgerEntry entry(
 
 void main() {
   test(
+    'daily allowance handles month end, leap years, future months and overspending',
+    () {
+      expect(
+        budgetDaysRemaining(DateTime(2026, 11), DateTime(2026, 11, 8)),
+        23,
+      );
+      expect(dailyDisposableCents(100000, 25000, 23), 3260);
+      expect(
+        budgetDaysRemaining(DateTime(2026, 11), DateTime(2026, 11, 30)),
+        1,
+      );
+      expect(budgetDaysRemaining(DateTime(2026, 10), DateTime(2026, 11, 8)), 0);
+      expect(budgetDaysRemaining(DateTime(2028, 2), DateTime(2027, 12, 8)), 29);
+      expect(dailyDisposableCents(10000, 11000, 5), 0);
+      expect(dailyDisposableCents(10000, 10000, 5), 0);
+      expect(dailyDisposableCents(10000, 0, 0), 0);
+    },
+  );
+
+  test(
     'money uses integer cents and rejects malformed or excessive precision',
     () {
       expect(parseMoney('0.01'), 1);

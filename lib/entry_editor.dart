@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'ledger.dart';
 import 'ui.dart';
+import 'selection_ui.dart';
 
 class EntryEditor extends StatefulWidget {
   const EntryEditor({
@@ -93,12 +94,12 @@ class _EntryEditorState extends State<EntryEditor> {
   }
 
   Future<void> pickDate() async {
-    final selected = await showDatePicker(
-      context: context,
-      initialDate: date,
-      firstDate: DateTime(1900),
-      lastDate: DateTime(2100, 12, 31),
+    final range = await showWalletDateSheet(
+      context,
+      initial: DateTimeRange(start: dayStart(date), end: dayStart(date)),
+      range: false,
     );
+    final selected = range?.start;
     if (selected != null && mounted) {
       setState(
         () => date = DateTime(
@@ -113,14 +114,9 @@ class _EntryEditorState extends State<EntryEditor> {
   }
 
   Future<void> pickTime() async {
-    final selected = await showTimePicker(
-      context: context,
-      initialTime: TimeOfDay.fromDateTime(date),
-      initialEntryMode: TimePickerEntryMode.input,
-      builder: (context, child) => MediaQuery(
-        data: MediaQuery.of(context).copyWith(alwaysUse24HourFormat: true),
-        child: child!,
-      ),
+    final selected = await showWalletTimeSheet(
+      context,
+      TimeOfDay.fromDateTime(date),
     );
     if (selected != null && mounted) {
       setState(
@@ -183,27 +179,21 @@ class _EntryEditorState extends State<EntryEditor> {
                 child: ListView(
                   padding: const EdgeInsets.all(22),
                   children: [
-                    SegmentedButton<EntryType>(
-                      segments: [
-                        const ButtonSegment(
-                          value: EntryType.expense,
-                          label: Text('支出'),
-                        ),
-                        const ButtonSegment(
-                          value: EntryType.income,
-                          label: Text('收入'),
-                        ),
-                        ButtonSegment(
-                          value: EntryType.transfer,
-                          label: const Text('转账'),
+                    WalletSegments<EntryType>(
+                      options: [
+                        const WalletOption(EntryType.expense, '支出'),
+                        const WalletOption(EntryType.income, '收入'),
+                        WalletOption(
+                          EntryType.transfer,
+                          '转账',
                           enabled: widget.ledger.accounts.length > 1,
                         ),
                       ],
-                      selected: {type},
-                      onSelectionChanged: saving
+                      selected: type,
+                      onChanged: saving
                           ? null
-                          : (selection) => setState(() {
-                              type = selection.single;
+                          : (value) => setState(() {
+                              type = value;
                               category = type == EntryType.transfer
                                   ? 'transfer'
                                   : widget.ledger.categoriesFor(type).first.id;
@@ -260,65 +250,85 @@ class _EntryEditorState extends State<EntryEditor> {
                         children: widget.ledger
                             .categoriesFor(type)
                             .map(
-                              (c) => ChoiceChip(
-                                avatar: Icon(categoryIcon(c.icon), size: 18),
-                                label: Text(c.name),
+                              (c) => WalletPill(
+                                icon: categoryIcon(c.icon),
+                                label: c.name,
                                 selected: category == c.id,
-                                onSelected: saving
+                                onTap: saving
                                     ? null
-                                    : (_) => setState(() => category = c.id),
+                                    : () => setState(() => category = c.id),
                               ),
                             )
                             .toList(),
                       ),
                     ],
                     const SizedBox(height: 24),
-                    DropdownButtonFormField<String>(
-                      initialValue: account,
-                      decoration: InputDecoration(
-                        labelText: type == EntryType.transfer ? '转出账户' : '记入账户',
-                      ),
-                      items: widget.ledger.accounts
-                          .map(
-                            (a) => DropdownMenuItem(
-                              value: a.id,
-                              child: Text(a.name),
-                            ),
-                          )
-                          .toList(),
-                      onChanged: saving
+                    WalletSelectField(
+                      label: type == EntryType.transfer ? '转出账户' : '记入账户',
+                      value: widget.ledger.accountName(account),
+                      icon: Icons.account_balance_wallet_outlined,
+                      onTap: saving
                           ? null
-                          : (value) => setState(() {
-                              account = value!;
-                              if (destination == account) {
-                                destination = widget.ledger.accounts
-                                    .firstWhere(
-                                      (a) => a.id != account,
-                                      orElse: () =>
-                                          widget.ledger.accounts.first,
+                          : () async {
+                              final value = await showWalletChoices<String>(
+                                context,
+                                title: '选择账户',
+                                selected: account,
+                                options: widget.ledger.accounts
+                                    .map(
+                                      (a) => WalletOption(
+                                        a.id,
+                                        a.name,
+                                        icon: Icons
+                                            .account_balance_wallet_outlined,
+                                      ),
                                     )
-                                    .id;
-                              }
-                            }),
+                                    .toList(),
+                              );
+                              if (value == null || !mounted) return;
+                              setState(() {
+                                account = value;
+                                if (destination == account) {
+                                  destination = widget.ledger.accounts
+                                      .firstWhere(
+                                        (a) => a.id != account,
+                                        orElse: () =>
+                                            widget.ledger.accounts.first,
+                                      )
+                                      .id;
+                                }
+                              });
+                            },
                     ),
                     if (type == EntryType.transfer) ...[
-                      const SizedBox(height: 16),
-                      DropdownButtonFormField<String>(
-                        key: ValueKey('$account/$destination'),
-                        initialValue: destination,
-                        decoration: const InputDecoration(labelText: '转入账户'),
-                        items: widget.ledger.accounts
-                            .where((a) => a.id != account)
-                            .map(
-                              (a) => DropdownMenuItem(
-                                value: a.id,
-                                child: Text(a.name),
-                              ),
-                            )
-                            .toList(),
-                        onChanged: saving
+                      const SizedBox(height: 12),
+                      WalletSelectField(
+                        label: '转入账户',
+                        value: widget.ledger.accountName(destination),
+                        icon: Icons.south_west_rounded,
+                        onTap: saving
                             ? null
-                            : (value) => setState(() => destination = value!),
+                            : () async {
+                                final value = await showWalletChoices<String>(
+                                  context,
+                                  title: '选择转入账户',
+                                  selected: destination,
+                                  options: widget.ledger.accounts
+                                      .where((a) => a.id != account)
+                                      .map(
+                                        (a) => WalletOption(
+                                          a.id,
+                                          a.name,
+                                          icon: Icons
+                                              .account_balance_wallet_outlined,
+                                        ),
+                                      )
+                                      .toList(),
+                                );
+                                if (value != null && mounted) {
+                                  setState(() => destination = value);
+                                }
+                              },
                       ),
                     ],
                     const SizedBox(height: 16),

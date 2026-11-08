@@ -20,6 +20,17 @@ String timeLabel(DateTime date) =>
     '${twoDigits(date.hour)}:${twoDigits(date.minute)}';
 DateTime dayStart(DateTime date) => DateTime(date.year, date.month, date.day);
 
+int budgetDaysRemaining(DateTime month, DateTime now) {
+  final selected = DateTime(month.year, month.month);
+  final current = DateTime(now.year, now.month);
+  if (selected.isBefore(current)) return 0;
+  final total = DateTime(month.year, month.month + 1, 0).day;
+  return selected == current ? total - now.day + 1 : total;
+}
+
+int dailyDisposableCents(int budget, int spent, int days) =>
+    days <= 0 || spent >= budget ? 0 : (budget - spent) ~/ days;
+
 class Account {
   const Account(this.id, this.name, this.openingCents);
   final String id;
