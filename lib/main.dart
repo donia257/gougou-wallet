@@ -101,6 +101,7 @@ class _LedgerHomeState extends State<LedgerHome> {
   bool busy = false;
   bool loadFailed = false;
   int page = 0;
+  bool entryButtonDocked = false;
   DateTime month = DateTime(DateTime.now().year, DateTime.now().month);
   DateTimeRange? range;
   EntryType? filter;
@@ -171,6 +172,7 @@ class _LedgerHomeState extends State<LedgerHome> {
 
   Future<void> editEntry([LedgerEntry? entry, bool copy = false]) async {
     if (busy) return;
+    setState(() => entryButtonDocked = false);
     await Navigator.of(context).push(
       MaterialPageRoute<void>(
         builder: (context) => EntryEditor(
@@ -311,60 +313,71 @@ class _LedgerHomeState extends State<LedgerHome> {
         child: Column(
           children: [
             Expanded(
-              child: CustomScrollView(
-                key: ValueKey(page),
-                slivers: [
-                  WalletSliverHeader(expanded: header()),
-                  if (busy)
-                    const SliverToBoxAdapter(
-                      child: LinearProgressIndicator(minHeight: 2),
+              child: NotificationListener<ScrollUpdateNotification>(
+                onNotification: (notification) {
+                  if (notification.depth == 0 &&
+                      notification.dragDetails != null &&
+                      (notification.scrollDelta ?? 0).abs() > 0.5 &&
+                      !entryButtonDocked) {
+                    setState(() => entryButtonDocked = true);
+                  }
+                  return false;
+                },
+                child: CustomScrollView(
+                  key: ValueKey(page),
+                  slivers: [
+                    WalletSliverHeader(expanded: header()),
+                    if (busy)
+                      const SliverToBoxAdapter(
+                        child: LinearProgressIndicator(minHeight: 2),
+                      ),
+                    SliverPadding(
+                      padding: const EdgeInsets.fromLTRB(22, 24, 22, 0),
+                      sliver: SliverList.list(
+                        children: switch (page) {
+                          0 => homeContent(),
+                          1 => billControls(bills),
+                          2 => statsContent(monthly),
+                          _ => settingsContent(),
+                        },
+                      ),
                     ),
-                  SliverPadding(
-                    padding: const EdgeInsets.fromLTRB(22, 24, 22, 0),
-                    sliver: SliverList.list(
-                      children: switch (page) {
-                        0 => homeContent(),
-                        1 => billControls(bills),
-                        2 => statsContent(monthly),
-                        _ => settingsContent(),
+                    if (page == 1)
+                      SliverPadding(
+                        padding: const EdgeInsets.symmetric(horizontal: 22),
+                        sliver: rows.isEmpty
+                            ? SliverToBoxAdapter(
+                                child: emptyState('这里还没有账单', '试试调整日期或筛选条件。'),
+                              )
+                            : SliverList.builder(
+                                itemCount: rows.length,
+                                itemBuilder: (context, index) =>
+                                    rows[index] is DaySummary
+                                    ? dayHeader(rows[index] as DaySummary)
+                                    : entryTile(
+                                        rows[index] as LedgerEntry,
+                                        last:
+                                            index == rows.length - 1 ||
+                                            rows[index + 1] is DaySummary,
+                                      ),
+                              ),
+                      ),
+                    SliverLayoutBuilder(
+                      builder: (context, constraints) {
+                        final remaining =
+                            constraints.viewportMainAxisExtent -
+                            constraints.precedingScrollExtent +
+                            WalletSliverHeader.expandedExtent(context) -
+                            kToolbarHeight;
+                        return SliverToBoxAdapter(
+                          child: SizedBox(
+                            height: remaining > 110 ? remaining : 110,
+                          ),
+                        );
                       },
                     ),
-                  ),
-                  if (page == 1)
-                    SliverPadding(
-                      padding: const EdgeInsets.symmetric(horizontal: 22),
-                      sliver: rows.isEmpty
-                          ? SliverToBoxAdapter(
-                              child: emptyState('这里还没有账单', '试试调整日期或筛选条件。'),
-                            )
-                          : SliverList.builder(
-                              itemCount: rows.length,
-                              itemBuilder: (context, index) =>
-                                  rows[index] is DaySummary
-                                  ? dayHeader(rows[index] as DaySummary)
-                                  : entryTile(
-                                      rows[index] as LedgerEntry,
-                                      last:
-                                          index == rows.length - 1 ||
-                                          rows[index + 1] is DaySummary,
-                                    ),
-                            ),
-                    ),
-                  SliverLayoutBuilder(
-                    builder: (context, constraints) {
-                      final remaining =
-                          constraints.viewportMainAxisExtent -
-                          constraints.precedingScrollExtent +
-                          WalletSliverHeader.expandedExtent(context) -
-                          kToolbarHeight;
-                      return SliverToBoxAdapter(
-                        child: SizedBox(
-                          height: remaining > 110 ? remaining : 110,
-                        ),
-                      );
-                    },
-                  ),
-                ],
+                  ],
+                ),
               ),
             ),
           ],
@@ -372,18 +385,18 @@ class _LedgerHomeState extends State<LedgerHome> {
       ),
       floatingActionButton: page == 3
           ? null
-          : FloatingActionButton.extended(
+          : DockingEntryButton(
+              docked: entryButtonDocked,
               onPressed: busy ? null : () => editEntry(),
-              backgroundColor: forest,
-              foregroundColor: Colors.white,
-              icon: const Icon(Icons.add),
-              label: const Text('记一笔'),
             ),
       bottomNavigationBar: WalletGlassSurface(
         bottom: true,
         child: NavigationBar(
           selectedIndex: page,
-          onDestinationSelected: (value) => setState(() => page = value),
+          onDestinationSelected: (value) => setState(() {
+            page = value;
+            entryButtonDocked = false;
+          }),
           backgroundColor: Colors.transparent,
           surfaceTintColor: Colors.transparent,
           elevation: 0,
@@ -573,6 +586,7 @@ class _LedgerHomeState extends State<LedgerHome> {
     search.clear();
     if (day != null) range = DateTimeRange(start: day, end: day);
     page = 1;
+    entryButtonDocked = false;
   });
 
   Widget dailyOverview() {
@@ -999,6 +1013,7 @@ class _LedgerHomeState extends State<LedgerHome> {
                         filterCategory = null;
                         search.clear();
                         page = 1;
+                        entryButtonDocked = false;
                       }),
                       child: SizedBox(
                         width: 34,

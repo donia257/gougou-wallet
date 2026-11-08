@@ -2,8 +2,8 @@ import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
-const appVersion = '0.2.4';
-const appBuild = 7;
+const appVersion = '0.2.5';
+const appBuild = 8;
 const cardRadius = 22.0;
 const walletOverlay = SystemUiOverlayStyle(
   statusBarColor: Colors.transparent,
@@ -284,6 +284,80 @@ class WalletSliverHeader extends StatelessWidget {
             ),
           );
         },
+      ),
+    );
+  }
+}
+
+/// Slides the compact entry action partly past the edge, leaving a 48 px handle.
+class DockingEntryButton extends StatelessWidget {
+  const DockingEntryButton({
+    super.key,
+    required this.docked,
+    required this.onPressed,
+  });
+  final bool docked;
+  final VoidCallback? onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    final duration = MediaQuery.disableAnimationsOf(context)
+        ? Duration.zero
+        : const Duration(milliseconds: 240);
+    return Tooltip(
+      message: '记一笔',
+      child: Semantics(
+        label: '记一笔',
+        button: true,
+        enabled: onPressed != null,
+        onTap: onPressed,
+        excludeSemantics: true,
+        child: AnimatedSlide(
+          duration: duration,
+          curve: Curves.easeOutCubic,
+          offset: docked ? const Offset(0.5, 0) : Offset.zero,
+          child: AnimatedContainer(
+            key: const ValueKey('entry-floating-action'),
+            duration: duration,
+            curve: Curves.easeOutCubic,
+            width: docked ? 64 : 116,
+            height: 56,
+            child: Material(
+              color: onPressed == null ? muted : forest,
+              borderRadius: BorderRadius.circular(cardRadius),
+              clipBehavior: Clip.antiAlias,
+              child: InkWell(
+                onTap: onPressed,
+                child: Center(
+                  child: FittedBox(
+                    fit: BoxFit.scaleDown,
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Icon(
+                          Icons.add_rounded,
+                          color: Colors.white,
+                          size: 26,
+                        ),
+                        if (!docked) ...[
+                          const SizedBox(width: 8),
+                          const Text(
+                            '记一笔',
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontSize: 14,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
       ),
     );
   }

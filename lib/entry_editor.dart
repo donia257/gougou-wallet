@@ -26,6 +26,7 @@ class EntryEditor extends StatefulWidget {
 
 class _EntryEditorState extends State<EntryEditor> {
   final form = GlobalKey<FormState>();
+  final amountFocus = FocusNode(debugLabel: 'entry-amount');
   late final amount = TextEditingController(
     text: widget.entry == null ? '' : money(widget.entry!.cents),
   );
@@ -50,7 +51,20 @@ class _EntryEditorState extends State<EntryEditor> {
   bool get editing => widget.entry != null && !widget.copy;
 
   @override
+  void initState() {
+    super.initState();
+    // Request the initial keyboard once, rather than autofocus when a lazily
+    // built input is recreated after a selector scrolls it out of view.
+    if (widget.entry == null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) amountFocus.requestFocus();
+      });
+    }
+  }
+
+  @override
   void dispose() {
+    amountFocus.dispose();
     amount.dispose();
     note.dispose();
     super.dispose();
@@ -177,6 +191,8 @@ class _EntryEditorState extends State<EntryEditor> {
             children: [
               Expanded(
                 child: ListView(
+                  keyboardDismissBehavior:
+                      ScrollViewKeyboardDismissBehavior.onDrag,
                   padding: const EdgeInsets.all(22),
                   children: [
                     WalletSegments<EntryType>(
@@ -207,11 +223,12 @@ class _EntryEditorState extends State<EntryEditor> {
                     TextFormField(
                       key: const ValueKey('entry-amount'),
                       controller: amount,
+                      onTapOutside: (_) => FocusScope.of(context).unfocus(),
                       onChanged: (_) {
                         if (saved) setState(() => saved = false);
                       },
                       enabled: !saving,
-                      autofocus: widget.entry == null,
+                      focusNode: amountFocus,
                       keyboardType: const TextInputType.numberWithOptions(
                         decimal: true,
                       ),
@@ -361,6 +378,7 @@ class _EntryEditorState extends State<EntryEditor> {
                     TextFormField(
                       key: const ValueKey('entry-note'),
                       controller: note,
+                      onTapOutside: (_) => FocusScope.of(context).unfocus(),
                       enabled: !saving,
                       maxLength: 120,
                       decoration: const InputDecoration(

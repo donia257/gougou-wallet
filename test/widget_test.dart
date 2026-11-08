@@ -855,6 +855,121 @@ void main() {
     },
   );
 
+  testWidgets(
+    'returning from editor selectors does not restore input focus or reopen keyboard',
+    (tester) async {
+      tester.view.physicalSize = const Size(390, 1000);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      await tester.pumpWidget(
+        DailyApp(home: LedgerHome(repository: MemoryRepository())),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('记一笔'));
+      await tester.pumpAndSettle();
+      final amount = find.byKey(const ValueKey('entry-amount'));
+      FocusNode amountFocus() => tester
+          .widget<EditableText>(
+            find.descendant(of: amount, matching: find.byType(EditableText)),
+          )
+          .focusNode;
+      for (final exit in ['close', 'back', 'select', 'barrier']) {
+        await tester.ensureVisible(amount);
+        await tester.enterText(amount, '12.30');
+        await tester.pumpAndSettle();
+        expect(amountFocus().hasFocus, isTrue);
+        expect(tester.testTextInput.isVisible, isTrue);
+        final account = find.byType(WalletSelectField).first;
+        await tester.ensureVisible(account);
+        await tester.tap(account);
+        await tester.pumpAndSettle();
+        expect(find.text('选择账户'), findsOneWidget);
+        tester.testTextInput.log.clear();
+        switch (exit) {
+          case 'close':
+            await tester.tap(find.byTooltip('关闭'));
+          case 'back':
+            await tester.binding.handlePopRoute();
+          case 'select':
+            await tester.tap(find.text('微信').last);
+          case 'barrier':
+            await tester.tapAt(const Offset(20, 30));
+        }
+        await tester.pumpAndSettle();
+        expect(find.text('选择账户'), findsNothing, reason: exit);
+        expect(
+          tester.testTextInput.log.where(
+            (call) => call.method == 'TextInput.show',
+          ),
+          isEmpty,
+          reason: exit,
+        );
+        expect(amountFocus().hasFocus, isFalse, reason: exit);
+        expect(tester.testTextInput.isVisible, isFalse, reason: exit);
+        expect(tester.widget<TextFormField>(amount).controller!.text, '12.30');
+      }
+      for (final label in ['日期', '时间']) {
+        await tester.ensureVisible(amount);
+        await tester.enterText(amount, '12.30');
+        await tester.ensureVisible(find.text(label));
+        await tester.tap(find.text(label));
+        await tester.pumpAndSettle();
+        await tester.tap(find.byTooltip('关闭'));
+        await tester.pumpAndSettle();
+        expect(amountFocus().hasFocus, isFalse, reason: label);
+        expect(tester.testTextInput.isVisible, isFalse, reason: label);
+      }
+      await tester.ensureVisible(amount);
+      await tester.tap(amount);
+      await tester.pumpAndSettle();
+      expect(tester.testTextInput.isVisible, isTrue);
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets(
+    'entry action docks at the right edge on scroll and remains tappable',
+    (tester) async {
+      tester.view.physicalSize = const Size(390, 844);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      await tester.pumpWidget(
+        DailyApp(home: LedgerHome(repository: MemoryRepository())),
+      );
+      await tester.pumpAndSettle();
+      final button = find.byType(DockingEntryButton);
+      final body = find.byKey(const ValueKey('entry-floating-action'));
+      expect(tester.widget<DockingEntryButton>(button).docked, isFalse);
+      await tester.drag(find.byType(CustomScrollView), const Offset(0, -180));
+      await tester.pumpAndSettle();
+      expect(tester.widget<DockingEntryButton>(button).docked, isTrue);
+      expect(find.text('记一笔'), findsNothing);
+      expect(tester.getSize(body).width, 64);
+      expect(390 - tester.getTopLeft(body).dx, closeTo(48, 1));
+      expect(tester.getBottomRight(body).dx, greaterThan(390));
+      await tester.tapAt(tester.getTopLeft(body) + const Offset(24, 28));
+      await tester.pumpAndSettle();
+      expect(find.text('记下这一笔'), findsOneWidget);
+      await tester.binding.handlePopRoute();
+      await tester.pumpAndSettle();
+      expect(tester.widget<DockingEntryButton>(button).docked, isFalse);
+      await tester.tap(find.text('账单'));
+      await tester.pumpAndSettle();
+      await tester.drag(find.byType(CustomScrollView), const Offset(0, -180));
+      await tester.pumpAndSettle();
+      expect(tester.widget<DockingEntryButton>(button).docked, isTrue);
+      await tester.tap(find.text('统计'));
+      await tester.pumpAndSettle();
+      expect(tester.widget<DockingEntryButton>(button).docked, isFalse);
+      await tester.tap(find.text('设置'));
+      await tester.pumpAndSettle();
+      expect(button, findsNothing);
+      expect(tester.takeException(), isNull);
+    },
+  );
+
   testWidgets('home layout at narrow width and large text', (tester) async {
     tester.view.physicalSize = const Size(320, 720);
     tester.view.devicePixelRatio = 1;

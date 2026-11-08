@@ -11,29 +11,38 @@ class WalletOption<T> {
   final bool enabled;
 }
 
-Future<T?> walletSheet<T>(BuildContext context, Widget child) =>
-    showModalBottomSheet<T>(
-      context: context,
-      isScrollControlled: true,
-      useSafeArea: true,
-      backgroundColor: paper,
-      barrierColor: ink.withValues(alpha: 0.28),
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(30)),
-      ),
-      clipBehavior: Clip.antiAlias,
-      builder: (context) => Padding(
-        padding: EdgeInsets.only(
-          bottom: MediaQuery.viewInsetsOf(context).bottom,
+Future<T?> walletSheet<T>(BuildContext context, Widget child) async {
+  // Clear the editor scope's focus history before the modal captures it.
+  // Otherwise popping the sheet restores the amount field and reopens the IME.
+  FocusManager.instance.primaryFocus?.unfocus(
+    disposition: UnfocusDisposition.scope,
+  );
+  FocusManager.instance.applyFocusChangesIfNeeded();
+  final result = await showModalBottomSheet<T>(
+    context: context,
+    isScrollControlled: true,
+    useSafeArea: true,
+    backgroundColor: paper,
+    barrierColor: ink.withValues(alpha: 0.28),
+    shape: const RoundedRectangleBorder(
+      borderRadius: BorderRadius.vertical(top: Radius.circular(30)),
+    ),
+    clipBehavior: Clip.antiAlias,
+    builder: (context) => Padding(
+      padding: EdgeInsets.only(bottom: MediaQuery.viewInsetsOf(context).bottom),
+      child: ConstrainedBox(
+        constraints: BoxConstraints(
+          maxHeight: MediaQuery.sizeOf(context).height * 0.88,
         ),
-        child: ConstrainedBox(
-          constraints: BoxConstraints(
-            maxHeight: MediaQuery.sizeOf(context).height * 0.88,
-          ),
-          child: child,
-        ),
+        child: child,
       ),
-    );
+    ),
+  );
+  // Popping a route can queue restoration of its previous input focus. Clear
+  // that history again before the exit animation completes.
+  FocusManager.instance.primaryFocus?.unfocus();
+  return result;
+}
 
 class WalletSheetFrame extends StatelessWidget {
   const WalletSheetFrame({
