@@ -89,6 +89,8 @@ class LedgerEntry {
     required this.accountId,
     this.toAccountId,
     this.note = '',
+    this.importBatchId,
+    this.sourceKey,
   });
   final String id;
   final EntryType type;
@@ -99,6 +101,8 @@ class LedgerEntry {
   final String accountId;
   final String? toAccountId;
   final String note;
+  final String? importBatchId;
+  final String? sourceKey;
   LedgerEntry copyWith({String? id, DateTime? date, String? category}) =>
       LedgerEntry(
         id: id ?? this.id,
@@ -109,6 +113,8 @@ class LedgerEntry {
         accountId: accountId,
         toAccountId: toAccountId,
         note: note,
+        importBatchId: importBatchId,
+        sourceKey: sourceKey,
       );
   Map<String, dynamic> toJson() => {
     'id': id,
@@ -119,6 +125,8 @@ class LedgerEntry {
     'accountId': accountId,
     'toAccountId': toAccountId,
     'note': note,
+    if (importBatchId != null) 'importBatchId': importBatchId,
+    if (sourceKey != null) 'sourceKey': sourceKey,
   };
   factory LedgerEntry.fromJson(Map<String, dynamic> json) {
     final dateText = json['date'] as String;
@@ -145,8 +153,44 @@ class LedgerEntry {
       accountId: json['accountId'] as String,
       toAccountId: json['toAccountId'] as String?,
       note: json['note'] as String? ?? '',
+      importBatchId: json['importBatchId'] as String?,
+      sourceKey: json['sourceKey'] as String?,
     );
   }
+}
+
+class ImportBatch {
+  ImportBatch({
+    required this.id,
+    required this.platform,
+    required this.fileName,
+    required this.createdAt,
+    required Map<String, String> fingerprints,
+    required List<String> sourceKeys,
+  }) : fingerprints = Map.unmodifiable(fingerprints),
+       sourceKeys = List.unmodifiable(sourceKeys);
+  final String id;
+  final String platform;
+  final String fileName;
+  final DateTime createdAt;
+  final Map<String, String> fingerprints;
+  final List<String> sourceKeys;
+  Map<String, dynamic> toJson() => {
+    'id': id,
+    'platform': platform,
+    'fileName': fileName,
+    'createdAt': createdAt.toIso8601String(),
+    'fingerprints': fingerprints,
+    'sourceKeys': sourceKeys,
+  };
+  factory ImportBatch.fromJson(Map<String, dynamic> json) => ImportBatch(
+    id: json['id'] as String,
+    platform: json['platform'] as String,
+    fileName: json['fileName'] as String,
+    createdAt: DateTime.parse(json['createdAt'] as String),
+    fingerprints: Map<String, String>.from(json['fingerprints'] as Map),
+    sourceKeys: List<String>.from(json['sourceKeys'] as List),
+  );
 }
 
 class Ledger {
@@ -156,7 +200,9 @@ class Ledger {
     required List<LedgerCategory> categories,
     required Map<String, int> budgets,
     String? lastAccountId,
-  }) : accounts = List.unmodifiable(accounts),
+    List<ImportBatch> importBatches = const [],
+  }) : importBatches = List.unmodifiable(importBatches),
+       accounts = List.unmodifiable(accounts),
        entries = List.unmodifiable(entries),
        categories = List.unmodifiable(categories),
        budgets = Map.unmodifiable(budgets),
@@ -197,6 +243,7 @@ class Ledger {
   final List<LedgerCategory> categories;
   final Map<String, int> budgets;
   final String lastAccountId;
+  final List<ImportBatch> importBatches;
 
   Ledger copyWith({
     List<Account>? accounts,
@@ -204,12 +251,14 @@ class Ledger {
     List<LedgerCategory>? categories,
     Map<String, int>? budgets,
     String? lastAccountId,
+    List<ImportBatch>? importBatches,
   }) => Ledger(
     accounts: accounts ?? this.accounts,
     entries: entries ?? this.entries,
     categories: categories ?? this.categories,
     budgets: budgets ?? this.budgets,
     lastAccountId: lastAccountId ?? this.lastAccountId,
+    importBatches: importBatches ?? this.importBatches,
   );
 
   List<LedgerCategory> categoriesFor(EntryType type) =>
@@ -301,12 +350,13 @@ class Ledger {
   }
 
   Map<String, dynamic> toJson() => {
-    'version': 2,
+    'version': 3,
     'accounts': accounts.map((a) => a.toJson()).toList(),
     'entries': entries.map((e) => e.toJson()).toList(),
     'categories': categories.map((c) => c.toJson()).toList(),
     'budgets': budgets,
     'lastAccountId': lastAccountId,
+    'importBatches': importBatches.map((b) => b.toJson()).toList(),
   };
   String encode() => jsonEncode(toJson());
 
@@ -347,7 +397,7 @@ class Ledger {
                   .id;
         return entry;
       }).toList();
-    } else if (data['version'] != 2) {
+    } else if (data['version'] != 2 && data['version'] != 3) {
       throw const FormatException('不支持此备份版本');
     }
     final accounts = (data['accounts'] as List)
@@ -364,6 +414,9 @@ class Ledger {
           .toList(),
       budgets: Map<String, int>.from(data['budgets'] as Map),
       lastAccountId: data['lastAccountId'] as String?,
+      importBatches: (data['importBatches'] as List? ?? [])
+          .map((b) => ImportBatch.fromJson(b as Map<String, dynamic>))
+          .toList(),
     );
     ledger.validate();
     return ledger;
@@ -403,7 +456,52 @@ class Ledger {
         )) {
       throw const FormatException('账本数据不完整或格式有误');
     }
+    final batchMap = {for (final b in importBatches) b.id: b};
+    final batchSources = {
+      for (final b in importBatches) b.id: b.sourceKeys.toSet(),
+    };
+    final importedKeys = importBatches.expand((b) => b.sourceKeys).toList();
+    final importedIds = importBatches
+        .expand((b) => b.fingerprints.keys)
+        .toList();
+    if (batchMap.length != importBatches.length ||
+        importedKeys.toSet().length != importedKeys.length ||
+        importedIds.toSet().length != importedIds.length ||
+        importBatches.any(
+          (b) =>
+              b.id.isEmpty ||
+              !['微信', '支付宝'].contains(b.platform) ||
+              b.fileName.isEmpty ||
+              b.fingerprints.isEmpty ||
+              b.sourceKeys.length != b.fingerprints.length ||
+              b.fingerprints.keys.any((id) => id.isEmpty) ||
+              b.fingerprints.values.any(
+                (v) => !RegExp(r'^[a-f0-9]{64}$').hasMatch(v),
+              ) ||
+              b.sourceKeys.any((k) => !k.startsWith('${b.platform}:')),
+        )) {
+      throw const FormatException('导入批次信息有误');
+    }
+    final entryKeys = entries
+        .where((e) => e.sourceKey != null)
+        .map((e) => e.sourceKey)
+        .toList();
+    if (entryKeys.toSet().length != entryKeys.length) {
+      throw const FormatException('存在重复的导入交易');
+    }
     for (final entry in entries) {
+      if ((entry.importBatchId == null) != (entry.sourceKey == null) ||
+          (entry.importBatchId != null &&
+              (batchMap[entry.importBatchId]?.fingerprints.containsKey(
+                        entry.id,
+                      ) !=
+                      true ||
+                  batchSources[entry.importBatchId]?.contains(
+                        entry.sourceKey,
+                      ) !=
+                      true))) {
+        throw const FormatException('账单关联的导入批次有误');
+      }
       if (entry.id.isEmpty ||
           entry.cents <= 0 ||
           entry.cents > 99999999999 ||

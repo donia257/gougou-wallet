@@ -84,6 +84,8 @@ class _EntryEditorState extends State<EntryEditor> {
       accountId: account,
       toAccountId: type == EntryType.transfer ? destination : null,
       note: note.text.trim(),
+      importBatchId: editing ? widget.entry!.importBatchId : null,
+      sourceKey: editing ? widget.entry!.sourceKey : null,
     );
     var success = false;
     try {

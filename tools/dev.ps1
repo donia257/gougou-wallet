@@ -33,7 +33,9 @@ $env:ANDROID_HOME = Join-Path $buildRoot '.tooling\android-sdk'
 $env:JAVA_TOOL_OPTIONS = '-Dfile.encoding=UTF-8'
 $env:GRADLE_USER_HOME = Join-Path $env:USERPROFILE '.codex\toolchains\wangwang-gradle'
 $env:FLUTTER_STORAGE_BASE_URL = 'https://storage.flutter-io.cn'
-$env:PUB_HOSTED_URL = 'https://pub.flutter-io.cn'
+if (-not $env:PUB_HOSTED_URL) {
+    $env:PUB_HOSTED_URL = 'https://pub.flutter-io.cn'
+}
 
 Push-Location -LiteralPath $buildRoot
 try {

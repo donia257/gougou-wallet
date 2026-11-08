@@ -1,7 +1,7 @@
 name: daily_ledger
 description: A local-first daily bookkeeping app for Android.
 publish_to: none
-version: 0.2.5+8
+version: 0.3.0+9
 environment:
   sdk: '>=3.8.0 <4.0.0'
 dependencies:
@@ -13,6 +13,11 @@ dependencies:
   path: ^1.9.1
   file_picker: ^10.3.10
   url_launcher: ^6.3.2
+  excel: 4.0.6
+  archive: 3.6.1
+  xml: 6.6.1
+  fast_gbk: 1.0.0
+  crypto: 3.0.7
 dev_dependencies:
   flutter_test:
     sdk: flutter

@@ -4,6 +4,7 @@ import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'ledger.dart';
+import 'import_page.dart';
 import 'repository.dart';
 import 'ui.dart';
 
@@ -124,6 +125,24 @@ class _BackupPageState extends State<BackupPage> {
         panel(
           Column(
             children: [
+              ListTile(
+                leading: const Icon(Icons.playlist_add_rounded, color: forest),
+                title: const Text('微信 / 支付宝账单导入'),
+                subtitle: const Text('预览、分类、去重与按批次撤销'),
+                onTap: busy || widget.currentLedger() == null
+                    ? null
+                    : () async {
+                        await Navigator.of(context).push(
+                          MaterialPageRoute<void>(
+                            builder: (_) => BillImportPage(
+                              currentLedger: () => widget.currentLedger()!,
+                              onCommit: widget.onRestore,
+                            ),
+                          ),
+                        );
+                        if (mounted) refresh();
+                      },
+              ),
               ListTile(
                 leading: const Icon(
                   Icons.file_download_outlined,

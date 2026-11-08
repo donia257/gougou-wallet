@@ -2,8 +2,8 @@ import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
-const appVersion = '0.2.5';
-const appBuild = 8;
+const appVersion = '0.3.0';
+const appBuild = 9;
 const cardRadius = 22.0;
 const walletOverlay = SystemUiOverlayStyle(
   statusBarColor: Colors.transparent,
@@ -312,45 +312,50 @@ class DockingEntryButton extends StatelessWidget {
         enabled: onPressed != null,
         onTap: onPressed,
         excludeSemantics: true,
-        child: AnimatedSlide(
+        child: AnimatedOpacity(
+          key: const ValueKey('entry-floating-opacity'),
           duration: duration,
-          curve: Curves.easeOutCubic,
-          offset: docked ? const Offset(0.5, 0) : Offset.zero,
-          child: AnimatedContainer(
-            key: const ValueKey('entry-floating-action'),
+          opacity: docked ? 0.55 : 1,
+          child: AnimatedSlide(
             duration: duration,
             curve: Curves.easeOutCubic,
-            width: docked ? 64 : 116,
-            height: 56,
-            child: Material(
-              color: onPressed == null ? muted : forest,
-              borderRadius: BorderRadius.circular(cardRadius),
-              clipBehavior: Clip.antiAlias,
-              child: InkWell(
-                onTap: onPressed,
-                child: Center(
-                  child: FittedBox(
-                    fit: BoxFit.scaleDown,
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        const Icon(
-                          Icons.add_rounded,
-                          color: Colors.white,
-                          size: 26,
-                        ),
-                        if (!docked) ...[
-                          const SizedBox(width: 8),
-                          const Text(
-                            '记一笔',
-                            style: TextStyle(
-                              color: Colors.white,
-                              fontSize: 14,
-                              fontWeight: FontWeight.w600,
-                            ),
+            offset: docked ? const Offset(0.5, 0) : Offset.zero,
+            child: AnimatedContainer(
+              key: const ValueKey('entry-floating-action'),
+              duration: duration,
+              curve: Curves.easeOutCubic,
+              width: docked ? 64 : 116,
+              height: 56,
+              child: Material(
+                color: onPressed == null ? muted : forest,
+                borderRadius: BorderRadius.circular(cardRadius),
+                clipBehavior: Clip.antiAlias,
+                child: InkWell(
+                  onTap: onPressed,
+                  child: Center(
+                    child: FittedBox(
+                      fit: BoxFit.scaleDown,
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Icon(
+                            Icons.add_rounded,
+                            color: Colors.white,
+                            size: 26,
                           ),
+                          if (!docked) ...[
+                            const SizedBox(width: 8),
+                            const Text(
+                              '记一笔',
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontSize: 14,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ],
                         ],
-                      ],
+                      ),
                     ),
                   ),
                 ),

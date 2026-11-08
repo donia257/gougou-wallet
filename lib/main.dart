@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
@@ -102,6 +103,7 @@ class _LedgerHomeState extends State<LedgerHome> {
   bool loadFailed = false;
   int page = 0;
   bool entryButtonDocked = false;
+  Timer? entryDockTimer;
   DateTime month = DateTime(DateTime.now().year, DateTime.now().month);
   DateTimeRange? range;
   EntryType? filter;
@@ -117,8 +119,24 @@ class _LedgerHomeState extends State<LedgerHome> {
 
   @override
   void dispose() {
+    entryDockTimer?.cancel();
     search.dispose();
     super.dispose();
+  }
+
+  void restoreEntryButton() {
+    entryDockTimer?.cancel();
+    entryDockTimer = null;
+    entryButtonDocked = false;
+  }
+
+  void dockEntryButton() {
+    if (entryButtonDocked || page == 3) return;
+    setState(() => entryButtonDocked = true);
+    entryDockTimer?.cancel();
+    entryDockTimer = Timer(const Duration(seconds: 10), () {
+      if (mounted) setState(restoreEntryButton);
+    });
   }
 
   Future<void> load() async {
@@ -172,7 +190,7 @@ class _LedgerHomeState extends State<LedgerHome> {
 
   Future<void> editEntry([LedgerEntry? entry, bool copy = false]) async {
     if (busy) return;
-    setState(() => entryButtonDocked = false);
+    setState(restoreEntryButton);
     await Navigator.of(context).push(
       MaterialPageRoute<void>(
         builder: (context) => EntryEditor(
@@ -319,7 +337,7 @@ class _LedgerHomeState extends State<LedgerHome> {
                       notification.dragDetails != null &&
                       (notification.scrollDelta ?? 0).abs() > 0.5 &&
                       !entryButtonDocked) {
-                    setState(() => entryButtonDocked = true);
+                    dockEntryButton();
                   }
                   return false;
                 },
@@ -395,7 +413,7 @@ class _LedgerHomeState extends State<LedgerHome> {
           selectedIndex: page,
           onDestinationSelected: (value) => setState(() {
             page = value;
-            entryButtonDocked = false;
+            restoreEntryButton();
           }),
           backgroundColor: Colors.transparent,
           surfaceTintColor: Colors.transparent,
@@ -586,7 +604,7 @@ class _LedgerHomeState extends State<LedgerHome> {
     search.clear();
     if (day != null) range = DateTimeRange(start: day, end: day);
     page = 1;
-    entryButtonDocked = false;
+    restoreEntryButton();
   });
 
   Widget dailyOverview() {
@@ -1013,7 +1031,7 @@ class _LedgerHomeState extends State<LedgerHome> {
                         filterCategory = null;
                         search.clear();
                         page = 1;
-                        entryButtonDocked = false;
+                        restoreEntryButton();
                       }),
                       child: SizedBox(
                         width: 34,
@@ -1153,7 +1171,7 @@ class _LedgerHomeState extends State<LedgerHome> {
           ListTile(
             leading: const Icon(Icons.backup_outlined, color: forest),
             title: const Text('数据与备份'),
-            subtitle: const Text('导出、恢复与本机快照'),
+            subtitle: const Text('账单导入、撤销、备份与恢复'),
             trailing: const Icon(Icons.chevron_right),
             onTap: busy ? null : openBackup,
           ),

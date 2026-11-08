@@ -55,9 +55,9 @@ class LedgerRepository {
     if (rows.isEmpty) return Ledger.empty();
     final raw = rows.single['data'] as String;
     final ledger = Ledger.decode(raw);
-    if ((jsonDecode(raw) as Map)['version'] == 1) {
+    if ((jsonDecode(raw) as Map)['version'] != 3) {
       await _database!.transaction((transaction) async {
-        await _snapshot(transaction, raw, '升级到 v0.2.0 之前');
+        await _snapshot(transaction, raw, '升级到 v0.3.0 之前');
         await _write(transaction, ledger);
       });
     }
@@ -94,6 +94,8 @@ class LedgerRepository {
             await _snapshot(transaction, raw, snapshotReason ?? '每日首次修改之前');
           }
         }
+      } else if (snapshotReason != null) {
+        await _snapshot(transaction, Ledger.empty().encode(), snapshotReason);
       }
       await _write(transaction, ledger);
     });

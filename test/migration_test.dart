@@ -1,10 +1,12 @@
 import 'dart:convert';
 import 'dart:io';
 import 'package:daily_ledger/ledger.dart';
+import 'package:daily_ledger/bill_import.dart';
 import 'package:daily_ledger/repository.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:path/path.dart' as path;
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
+import 'bill_import_test.dart' as import_fixtures;
 
 void main() {
   sqfliteFfiInit();
@@ -57,6 +59,63 @@ void main() {
       await repository.close();
       expect((await repository.open()).encode(), ledger.encode());
       expect((await repository.snapshots()).length, 1);
+    },
+  );
+
+  test(
+    'v2 SQLite migration preserves the ledger and creates one recovery point',
+    () async {
+      final original = await repository.open();
+      final db = await databaseFactoryFfi.openDatabase(databasePath);
+      final data = original.toJson()
+        ..['version'] = 2
+        ..remove('importBatches');
+      await db.update('ledger', {'data': jsonEncode(data)}, where: 'id = 1');
+      final migrated = await repository.open();
+      expect(migrated.encode(), original.encode());
+      final count = (await repository.snapshots()).length;
+      expect(count, 2);
+      expect((await repository.open()).encode(), original.encode());
+      expect((await repository.snapshots()).length, count);
+    },
+  );
+
+  test(
+    'import batches persist across restart and undo only the imported data',
+    () async {
+      final original = await repository.open();
+      final preview = import_fixtures.wx(import_fixtures.wechatRow, original);
+      final imported = import_fixtures.apply(original, preview);
+      await repository.save(imported, snapshotReason: '导入微信账单之前');
+      await repository.close();
+      final reopened = await repository.open();
+      expect(reopened.importBatches.length, 1);
+      expect(reopened.entries.length, original.entries.length + 1);
+      final undone = undoBillImport(reopened, reopened.importBatches.single.id);
+      await repository.save(undone, snapshotReason: '撤销导入之前');
+      expect((await repository.open()).encode(), original.encode());
+    },
+  );
+
+  test(
+    'failed import transaction retains both original ledger and batch history',
+    () async {
+      final original = await repository.open();
+      final db = await databaseFactoryFfi.openDatabase(databasePath);
+      await db.execute(
+        "CREATE TRIGGER fail_import BEFORE INSERT ON ledger BEGIN SELECT RAISE(ABORT, 'disk full'); END",
+      );
+      final next = import_fixtures.apply(
+        original,
+        import_fixtures.wx(import_fixtures.wechatRow, original),
+      );
+      final count = (await repository.snapshots()).length;
+      await expectLater(
+        repository.save(next, snapshotReason: '导入微信账单之前'),
+        throwsA(anything),
+      );
+      expect((await repository.open()).encode(), original.encode());
+      expect((await repository.snapshots()).length, count);
     },
   );
 

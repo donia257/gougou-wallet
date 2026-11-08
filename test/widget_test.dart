@@ -35,7 +35,7 @@ class FakeUpdateService extends UpdateService {
   @override
   Future<GithubRelease> latest() async {
     calls++;
-    return const GithubRelease(tag: 'v0.3.0', notes: '更新内容');
+    return const GithubRelease(tag: 'v0.4.0', notes: '更新内容');
   }
 }
 
@@ -254,7 +254,7 @@ void main() {
       await tester.tap(find.widgetWithText(FilledButton, '检查更新'));
       await tester.pumpAndSettle();
       expect(service.calls, 1);
-      expect(find.text('发现新版本 v0.3.0'), findsOneWidget);
+      expect(find.text('发现新版本 v0.4.0'), findsOneWidget);
       expect(find.text('到 GitHub 下载新版'), findsOneWidget);
     },
   );
@@ -949,6 +949,17 @@ void main() {
       expect(tester.getSize(body).width, 64);
       expect(390 - tester.getTopLeft(body).dx, closeTo(48, 1));
       expect(tester.getBottomRight(body).dx, greaterThan(390));
+      final opacity = find.byKey(const ValueKey('entry-floating-opacity'));
+      expect(tester.widget<AnimatedOpacity>(opacity).opacity, 0.55);
+      await tester.pump(const Duration(seconds: 9));
+      expect(tester.widget<DockingEntryButton>(button).docked, isTrue);
+      await tester.pump(const Duration(seconds: 1));
+      await tester.pumpAndSettle();
+      expect(tester.widget<DockingEntryButton>(button).docked, isFalse);
+      expect(tester.widget<AnimatedOpacity>(opacity).opacity, 1);
+      await tester.drag(find.byType(CustomScrollView), const Offset(0, 120));
+      await tester.pumpAndSettle();
+      expect(tester.widget<DockingEntryButton>(button).docked, isTrue);
       await tester.tapAt(tester.getTopLeft(body) + const Offset(24, 28));
       await tester.pumpAndSettle();
       expect(find.text('记下这一笔'), findsOneWidget);
